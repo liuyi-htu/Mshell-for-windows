@@ -1,0 +1,302 @@
+name: Build and publish Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example v1.0"
+        required: true
+        default: "v1.0.2"
+        type: string
+      release_name:
+        description: "Release title; leave empty to use the version tag"
+        required: false
+        default: ""
+        type: string
+      release_notes:
+        description: "Detailed changes in this release"
+        required: false
+        default: ""
+        type: string
+      prerelease:
+        description: "Mark as a prerelease"
+        required: true
+        default: false
+        type: boolean
+      publish_release:
+        description: "Publish to GitHub Releases"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Prepare release information
+        shell: pwsh
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+          RAW_RELEASE_NAME: ${{ inputs.release_name }}
+        run: |
+          $version = $env:RAW_VERSION.Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Version cannot be empty."
+          }
+
+          if ($version.StartsWith("v", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $tag = "v" + $version.Substring(1)
+          }
+          else {
+            $tag = "v$version"
+          }
+
+          $appVersion = $tag.Substring(1)
+          if ($appVersion -notmatch '^\d+\.\d+(?:\.\d+){0,2}(?:[-.][0-9A-Za-z.-]+)?$') {
+            throw "Version must look like 1.0, v1.0, 1.0.2, v1.0.2, or 1.0.2.0."
+          }
+
+          $releaseTitle = $env:RAW_RELEASE_NAME.Trim()
+          if ([string]::IsNullOrWhiteSpace($releaseTitle)) {
+            $releaseTitle = $tag
+          }
+
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_VERSION=$appVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_TITLE=$releaseTitle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "INSTALLER_NAME=Mshell-Setup-x64" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+          cache: true
+          cache-dependency-path: |
+            Mshell/go.sum
+            Msftp/go.sum
+
+      - name: Install go-winres
+        shell: pwsh
+        run: |
+          go install github.com/tc-hib/go-winres@latest
+          $goBin = Join-Path (go env GOPATH) "bin"
+          $goWinres = Join-Path $goBin "go-winres.exe"
+
+          if (-not (Test-Path $goWinres)) {
+            throw "go-winres.exe was not found after installation."
+          }
+
+          "GO_WINRES=$goWinres" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Test Mshell
+        shell: pwsh
+        working-directory: Mshell
+        run: |
+          go mod download
+          go test ./...
+
+      - name: Test Msftp
+        shell: pwsh
+        working-directory: Msftp
+        run: |
+          go mod download
+          go test ./...
+
+      - name: Generate Mshell Windows resources
+        shell: pwsh
+        working-directory: Mshell
+        run: |
+          Get-ChildItem -Filter "rsrc_windows_*.syso" -ErrorAction SilentlyContinue |
+            Remove-Item -Force
+
+          & $env:GO_WINRES simply `
+            --arch amd64 `
+            --manifest gui `
+            --icon "assets\app-icon.ico" `
+            --product-name "Mshell" `
+            --file-description "Mshell" `
+            --original-filename "Mshell.exe" `
+            --product-version $env:APP_VERSION `
+            --file-version $env:APP_VERSION
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to generate Mshell Windows resources."
+          }
+
+          if (-not (Test-Path "rsrc_windows_amd64.syso")) {
+            throw "Mshell resource file was not generated."
+          }
+
+      - name: Generate Msftp Windows resources
+        shell: pwsh
+        working-directory: Msftp
+        run: |
+          Get-ChildItem -Filter "rsrc_windows_*.syso" -ErrorAction SilentlyContinue |
+            Remove-Item -Force
+
+          & $env:GO_WINRES simply `
+            --arch amd64 `
+            --manifest gui `
+            --icon "assets\app-icon.ico" `
+            --product-name "Msftp" `
+            --file-description "Msftp" `
+            --original-filename "Msftp.exe" `
+            --product-version $env:APP_VERSION `
+            --file-version $env:APP_VERSION
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to generate Msftp Windows resources."
+          }
+
+          if (-not (Test-Path "rsrc_windows_amd64.syso")) {
+            throw "Msftp resource file was not generated."
+          }
+
+      - name: Build Mshell
+        shell: pwsh
+        working-directory: Mshell
+        run: |
+          Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          go clean -cache
+          go build -a -trimpath -ldflags "-s -w -H=windowsgui" -o "dist\Mshell.exe" .
+
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "dist\Mshell.exe")) {
+            throw "Mshell build failed."
+          }
+
+      - name: Build Msftp
+        shell: pwsh
+        working-directory: Msftp
+        run: |
+          Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+          go clean -cache
+          go build -a -trimpath -ldflags "-s -w -H=windowsgui" -o "dist\Msftp.exe" .
+
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "dist\Msftp.exe")) {
+            throw "Msftp build failed."
+          }
+
+      - name: Build installer
+        shell: pwsh
+        env:
+          MY_APP_VERSION: ${{ env.APP_VERSION }}
+        run: |
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            $candidates = @(
+              "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+              "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+            )
+            $iscc = $candidates |
+              Where-Object { $_ -and (Test-Path $_) } |
+              Select-Object -First 1
+          }
+
+          if (-not $iscc) {
+            throw "Inno Setup 6 compiler was not found."
+          }
+
+          Remove-Item -Recurse -Force "installer\Output" -ErrorAction SilentlyContinue
+
+          & $iscc `
+            "/DMyAppVersion=$env:APP_VERSION" `
+            "/DMyArchitectureSuffix=x64" `
+            "installer\Mshell-Msftp.iss"
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup failed with exit code $LASTEXITCODE."
+          }
+
+          $installer = Get-ChildItem "installer\Output\*.exe" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+
+          if (-not $installer) {
+            throw "Installer was not generated."
+          }
+
+          "INSTALLER_PATH=$($installer.FullName)" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mshell-Msftp-${{ env.RELEASE_TAG }}-windows-x64
+          path: |
+            Mshell/dist/Mshell.exe
+            Msftp/dist/Msftp.exe
+            installer/Output/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish to GitHub Releases
+        if: ${{ inputs.publish_release }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IS_PRERELEASE: ${{ inputs.prerelease }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          $asset = Get-Item $env:INSTALLER_PATH
+
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG $asset.FullName --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to update the release asset."
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_NOTES)) {
+              gh release edit $env:RELEASE_TAG --notes $env:RELEASE_NOTES
+              if ($LASTEXITCODE -ne 0) {
+                throw "Failed to update the release notes."
+              }
+            }
+          }
+          else {
+            $arguments = @(
+              "release", "create", $env:RELEASE_TAG, $asset.FullName,
+              "--target", "${{ github.sha }}",
+              "--title", $env:RELEASE_TITLE
+            )
+
+            if ([string]::IsNullOrWhiteSpace($env:RELEASE_NOTES)) {
+              $arguments += "--generate-notes"
+            }
+            else {
+              $arguments += @("--notes", $env:RELEASE_NOTES)
+            }
+
+            if ($env:IS_PRERELEASE -eq "true") {
+              $arguments += "--prerelease"
+            }
+
+            & gh @arguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to create the GitHub Release."
+            }
+          }
+
+          $releaseUrl = gh release view $env:RELEASE_TAG --json url --jq ".url"
+          @"
+          ## Windows release completed
+
+          - Version: $env:RELEASE_TAG
+          - Installer: $($asset.Name)
+          - Release: $releaseUrl
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

@@ -1,0 +1,2220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Msftp</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      background: #f2f2f2;
+      color: #111;
+      --line: #d7dde3;
+      --soft-line: #edf1f4;
+      --blue: #1593df;
+      --select: #d6d6d6;
+      --text-muted: #58616b;
+      --pane-split: 50%;
+      --left-pane: minmax(180px, var(--pane-split));
+      --right-pane: minmax(180px, 1fr);
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      display: grid;
+      grid-template-rows: 25px 1fr 200px 24px;
+      grid-template-columns: minmax(0, 1fr);
+      background: #fff;
+      font-size: 14px;
+    }
+    body > aside {
+      display: none;
+    }
+    body.sidebar-collapsed {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    body.sidebar-collapsed aside {
+      display: none;
+    }
+    body.sidebar-collapsed .app-titlebar {
+      grid-template-columns: 50px minmax(0, 1fr);
+    }
+    body.sidebar-collapsed .titlebar-left {
+      position: static;
+      width: 50px;
+      padding-left: 7px;
+      z-index: 6;
+    }
+    body.sidebar-collapsed .tabs {
+      grid-column: 2;
+    }
+    body.sidebar-collapsed .workspace,
+    body.sidebar-collapsed .transfer-panel {
+      grid-column: 1 / -1;
+    }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .app-titlebar {
+      position: relative;
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      align-items: center;
+      gap: 0;
+      height: 25px;
+      min-width: 0;
+      border-bottom: 1px solid #cfd5dc;
+      background: #edf2f6;
+      color: #68717a;
+      user-select: none;
+    }
+    .titlebar-left,
+    .titlebar-right {
+      display: inline-flex;
+      align-items: center;
+      min-width: 0;
+      height: 100%;
+    }
+    .titlebar-left {
+      display: none;
+    }
+    .titlebar-right {
+      justify-content: flex-end;
+      gap: 10px;
+      position: absolute;
+      right: 0;
+      top: 0;
+    }
+    .titlebar-icon,
+    .window-button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      line-height: 1;
+    }
+    .titlebar-icon {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      padding: 0;
+      border: 1px solid #b8c4cf;
+      border-radius: 999px;
+      background: #f8fbfd;
+    }
+    .titlebar-icon::before {
+      content: "";
+      position: absolute;
+      left: 12px;
+      top: 5px;
+      width: 2px;
+      height: 10px;
+      border-radius: 2px;
+      background: #7c8792;
+    }
+    .titlebar-icon:hover {
+      background: #dce4eb;
+    }
+    .tabs {
+      display: grid;
+      grid-template-columns: var(--left-pane) 1px var(--right-pane);
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      height: 100%;
+      overflow-x: auto;
+      padding: 3px 0;
+    }
+    .tab-zone {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+    .tab-zone.right {
+      justify-content: flex-start;
+    }
+    .tab-divider {
+      width: 1px;
+      height: 18px;
+      background: #b8c4cf;
+    }
+    .tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 220px;
+      height: 26px;
+      padding: 0 8px 0 10px;
+      border: 1px solid #d2dae2;
+      border-radius: 5px;
+      background: transparent;
+      color: #5c6670;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .tab.dragging {
+      opacity: .55;
+    }
+    .tab.drop-ready,
+    .tab-zone.drop-ready {
+      border-color: #4f86c6;
+      background: #eef6ff;
+    }
+    .tab.drop-before {
+      box-shadow: inset 3px 0 0 #4f86c6;
+    }
+    .tab.drop-after {
+      box-shadow: inset -3px 0 0 #4f86c6;
+    }
+    .tab.active {
+      border-color: #b8c4cf;
+      background: #ffffff;
+      color: #1f2933;
+    }
+    .tab-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tab-status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #8b949e;
+      flex: 0 0 auto;
+    }
+    .tab-status-text {
+      font-size: 12px;
+      color: #8b949e;
+      flex: 0 0 auto;
+    }
+    .tab.connected .tab-status-dot {
+      background: #23b26d;
+    }
+    .tab.connected .tab-status-text {
+      color: #178a54;
+    }
+    .tab-close {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: inherit;
+      line-height: 1;
+    }
+    .window-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+      height: 25px;
+      padding: 0;
+    }
+    .window-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 52px;
+      height: 25px;
+      padding: 0;
+      border-radius: 0;
+      font-size: 22px;
+      font-weight: 650;
+      line-height: 1;
+      transform: translateY(-1px);
+      color: #5d6670;
+    }
+    .window-button.minimize {
+      font-size: 26px;
+    }
+    .window-button:hover {
+      background: #dce4eb;
+      color: #20262d;
+    }
+    .window-button.close:hover {
+      background: #d94c4c;
+      color: #ffffff;
+    }
+    aside,
+    .tabs,
+    .accounts,
+    .file-list,
+    .bottom-table {
+      scrollbar-width: none;
+      scrollbar-color: transparent transparent;
+    }
+    aside::-webkit-scrollbar,
+    .tabs::-webkit-scrollbar,
+    .accounts::-webkit-scrollbar,
+    .file-list::-webkit-scrollbar,
+    .bottom-table::-webkit-scrollbar {
+      width: 2px;
+      height: 2px;
+    }
+    aside::-webkit-scrollbar-thumb,
+    .tabs::-webkit-scrollbar-thumb,
+    .accounts::-webkit-scrollbar-thumb,
+    .file-list::-webkit-scrollbar-thumb,
+    .bottom-table::-webkit-scrollbar-thumb {
+      background: transparent;
+      border-radius: 999px;
+    }
+    aside.scrollbar-hot,
+    .tabs.scrollbar-hot,
+    .accounts.scrollbar-hot,
+    .file-list.scrollbar-hot,
+    .bottom-table.scrollbar-hot {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(95, 106, 118, .48) transparent;
+    }
+    aside.scrollbar-hot::-webkit-scrollbar,
+    .tabs.scrollbar-hot::-webkit-scrollbar,
+    .accounts.scrollbar-hot::-webkit-scrollbar,
+    .file-list.scrollbar-hot::-webkit-scrollbar,
+    .bottom-table.scrollbar-hot::-webkit-scrollbar {
+      width: 11px;
+      height: 11px;
+    }
+    aside.scrollbar-hot::-webkit-scrollbar-thumb,
+    .tabs.scrollbar-hot::-webkit-scrollbar-thumb,
+    .accounts.scrollbar-hot::-webkit-scrollbar-thumb,
+    .file-list.scrollbar-hot::-webkit-scrollbar-thumb,
+    .bottom-table.scrollbar-hot::-webkit-scrollbar-thumb {
+      min-height: 28px;
+      min-width: 28px;
+      border: 3px solid transparent;
+      border-radius: 999px;
+      background: rgba(95, 106, 118, .48);
+      background-clip: content-box;
+    }
+    aside.scrollbar-hot::-webkit-scrollbar-thumb:hover,
+    .tabs.scrollbar-hot::-webkit-scrollbar-thumb:hover,
+    .accounts.scrollbar-hot::-webkit-scrollbar-thumb:hover,
+    .file-list.scrollbar-hot::-webkit-scrollbar-thumb:hover,
+    .bottom-table.scrollbar-hot::-webkit-scrollbar-thumb:hover {
+      background: rgba(70, 80, 92, .68);
+      background-clip: content-box;
+    }
+    aside {
+      grid-row: 2 / 4;
+      grid-column: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+      min-height: 0;
+      padding: 20px;
+      border-right: 1px solid #2c333d;
+      background: #181d23;
+      color: #e8edf2;
+      overflow: auto;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.25;
+    }
+    .sidebar-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .language-toggle {
+      flex: 0 0 auto;
+      min-width: 62px;
+      height: 28px;
+      padding: 0 10px;
+      border: 1px solid #495564;
+      border-radius: 6px;
+      background: #222a33;
+      color: #e8edf2;
+      font-size: 12px;
+      line-height: 26px;
+      text-align: center;
+    }
+    .language-toggle:hover {
+      border-color: #6f8194;
+      background: #2a3541;
+    }
+    label {
+      display: grid;
+      gap: 8px;
+      color: #aeb8c4;
+      font-size: 14px;
+    }
+    aside input,
+    aside select,
+    .form button,
+    .accounts button {
+      width: 100%;
+      min-width: 0;
+      height: 42px;
+      border: 1px solid #34404c;
+      border-radius: 7px;
+      font: inherit;
+    }
+    aside input,
+    aside select {
+      padding: 0 12px;
+      background: #0f1318;
+      color: #e8edf2;
+    }
+    .form {
+      display: grid;
+      gap: 14px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 112px;
+      gap: 12px;
+    }
+    .actions,
+    .accounts {
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+    .accounts {
+      flex: 0 0 auto;
+      min-height: max-content;
+    }
+    .form button,
+    .accounts button {
+      padding: 0 12px;
+      background: #243141;
+      color: #f4f7fa;
+    }
+    .form button.primary {
+      border-color: #2e6ea5;
+      background: #2872a8;
+    }
+    .accounts button.danger {
+      border-color: #724248;
+      background: #673941;
+    }
+    .accounts button.info {
+      border-color: #44596d;
+      background: #273b4d;
+    }
+    .about-overlay {
+      position: fixed;
+      inset: 25px 0 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 22px;
+      background: rgba(31, 38, 45, .55);
+    }
+    .about-overlay.open { display: flex; }
+    .about-dialog {
+      width: min(760px, 100%);
+      max-height: calc(100vh - 70px);
+      overflow: auto;
+      border: 1px solid #cbd2d9;
+      border-radius: 12px;
+      background: #fff;
+      color: #161a1e;
+      box-shadow: 0 20px 60px rgba(30, 40, 50, .28);
+    }
+    .about-header {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 18px;
+      border-bottom: 1px solid #e0e5e9;
+      background: #fff;
+    }
+    .about-header h2, .about-section h3 { margin: 0; }
+    .about-close {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid #c8d0d7;
+      border-radius: 7px;
+      background: #f4f6f8;
+      color: #222b33;
+      font-size: 22px;
+      line-height: 1;
+    }
+    .about-content {
+      display: grid;
+      gap: 18px;
+      padding: 18px;
+    }
+    .about-section { display: grid; gap: 10px; }
+    .about-section p {
+      margin: 0;
+      color: #4f5963;
+      line-height: 1.65;
+    }
+    .side-status {
+      margin-top: auto;
+      color: #8f9aa6;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .workspace {
+      grid-row: 2;
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: var(--left-pane) 6px var(--right-pane);
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border-bottom: 1px solid #cfd5db;
+    }
+    .pane {
+      display: grid;
+      grid-template-rows: 34px 1fr;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      border-right: 1px solid var(--line);
+      background: #fff;
+    }
+    #localPane,
+    #remotePane,
+    #emptyLeftPane,
+    #emptyRightPane {
+      grid-row: 1;
+    }
+    .pane-splitter {
+      grid-column: 2;
+      grid-row: 1;
+      min-width: 6px;
+      cursor: col-resize;
+      background: linear-gradient(to right, transparent 0, transparent 2px, #cfd5db 2px, #cfd5db 4px, transparent 4px);
+      z-index: 2;
+    }
+    .pane-splitter:hover,
+    body.resizing-panes .pane-splitter,
+    .transfer-splitter-guide:hover,
+    body.resizing-panes .transfer-splitter-guide {
+      background: rgba(21, 147, 223, .14);
+    }
+    .pane:last-child { border-right: 0; }
+    .pane.active { outline: 2px solid rgba(21, 147, 223, .28); outline-offset: -2px; }
+    .bar {
+      display: grid;
+      grid-template-columns: auto minmax(110px, 1fr) auto;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      padding: 3px 5px;
+      border-bottom: 1px solid var(--line);
+      background: #f6f6f6;
+    }
+    .nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .icon-btn {
+      width: 28px;
+      height: 26px;
+      padding: 0;
+      border: 1px solid transparent;
+      background: transparent;
+      color: #4d5965;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .icon-btn:hover {
+      border-color: #b8c6d4;
+      background: #edf4fb;
+    }
+    .pathbox {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      min-width: 0;
+      height: 27px;
+      border: 1px solid #b9c2cb;
+      background: #fff;
+    }
+    .folder { padding-left: 7px; color: #e6ad19; }
+    .path-input {
+      min-width: 0;
+      height: 25px;
+      border: 0;
+      outline: 0;
+      padding: 0 8px;
+      background: transparent;
+    }
+    .connect {
+      display: inline-grid;
+      grid-template-columns: minmax(76px, 1fr) 46px minmax(62px, .75fr) minmax(64px, .75fr) 56px;
+      gap: 5px;
+      align-items: center;
+      min-width: 0;
+      width: min(100%, 360px);
+      max-width: 100%;
+    }
+    .connect input {
+      min-width: 0;
+      height: 25px;
+      border: 1px solid #b9c2cb;
+      padding: 0 7px;
+      background: #fff;
+    }
+    .connect button,
+    .tool-btn {
+      height: 25px;
+      border: 1px solid #aab6c2;
+      background: #f8f8f8;
+      padding: 0 9px;
+    }
+    .connect button { padding: 0 4px; }
+    .connect button:hover,
+    .tool-btn:hover { background: #eaf3fc; border-color: #8bbce8; }
+    .file-list {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+    }
+    table {
+      width: 100%;
+      min-width: 620px;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+    .resizable-table {
+      width: max-content;
+      min-width: max-content;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      height: 26px;
+      padding: 0 6px;
+      border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--soft-line);
+      background: #fff;
+      text-align: left;
+      font-weight: 400;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .resizable-table th {
+      position: sticky;
+    }
+    .resizable-table th.sortable {
+      cursor: pointer;
+    }
+    .resizable-table th.sortable:hover {
+      background: #f2f7fb;
+    }
+    .sort-indicator {
+      display: inline-block;
+      width: 12px;
+      margin-left: 4px;
+      color: #4f6b80;
+      font-size: 10px;
+      line-height: 1;
+      text-align: center;
+      vertical-align: 1px;
+    }
+    .col-resizer {
+      position: absolute;
+      top: 0;
+      right: -3px;
+      z-index: 3;
+      width: 6px;
+      height: 100%;
+      cursor: col-resize;
+    }
+    .col-resizer:hover,
+    body.resizing-columns .col-resizer {
+      background: rgba(21, 147, 223, .18);
+    }
+    tbody td {
+      height: 24px;
+      padding: 0 6px;
+      border-right: 1px solid var(--soft-line);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    tbody tr { user-select: none; }
+    tbody tr:hover { background: #eef6ff; }
+    tbody tr.selected { background: var(--select); }
+    /* Column widths are controlled only by <colgroup>. Keeping percentage widths
+       on cells makes the browser redistribute unrelated columns while dragging. */
+    .size-col { text-align: right; }
+    .entry-name {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      max-width: 100%;
+      width: 100%;
+    }
+    .entry-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .parent-row .entry-label {
+      font-weight: 650;
+    }
+    .entry-icon {
+      position: relative;
+      display: inline-block;
+      width: 18px;
+      height: 16px;
+      flex: 0 0 auto;
+    }
+    .entry-icon.folder::before {
+      content: "";
+      position: absolute;
+      left: 1px;
+      top: 4px;
+      width: 16px;
+      height: 11px;
+      border: 1px solid #d49b12;
+      border-radius: 2px;
+      background: linear-gradient(#ffd65d, #f4b62c);
+    }
+    .entry-icon.folder::after {
+      content: "";
+      position: absolute;
+      left: 2px;
+      top: 1px;
+      width: 8px;
+      height: 5px;
+      border: 1px solid #d49b12;
+      border-bottom: 0;
+      border-radius: 2px 2px 0 0;
+      background: #ffd65d;
+    }
+    .entry-icon.file::before {
+      content: "";
+      position: absolute;
+      left: 3px;
+      top: 1px;
+      width: 12px;
+      height: 14px;
+      border: 1px solid #aeb7c1;
+      background: #ffffff;
+      box-shadow: inset -3px 3px 0 #eef2f6;
+    }
+    .entry-icon.file::after {
+      content: "";
+      position: absolute;
+      right: 3px;
+      top: 1px;
+      width: 5px;
+      height: 5px;
+      border-left: 1px solid #aeb7c1;
+      border-bottom: 1px solid #aeb7c1;
+      background: #eef2f6;
+    }
+    .transfer-panel {
+      grid-row: 3;
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-rows: 1fr;
+      min-height: 0;
+      position: relative;
+      background: #fff;
+      border-bottom: 1px solid #cfd5db;
+    }
+    .panel-tabs {
+      display: flex;
+      align-items: end;
+      background: #ededed;
+      border-bottom: 1px solid #cfd5db;
+    }
+    .panel-tab {
+      height: 28px;
+      padding: 0 12px;
+      border: 0;
+      border-right: 1px solid #cbd2d9;
+      background: transparent;
+      font-weight: 650;
+    }
+    .panel-tab.active { background: #fff; color: #4d5965; }
+    .transfer-splitter-guide {
+      position: absolute;
+      left: var(--pane-split);
+      top: 0;
+      bottom: 0;
+      width: 6px;
+      transform: translateX(-3px);
+      cursor: col-resize;
+      z-index: 5;
+      background: linear-gradient(to right, transparent 0, transparent 2px, rgba(207,213,219,.9) 2px, rgba(207,213,219,.9) 4px, transparent 4px);
+    }
+    .bottom-table { overflow: hidden; min-height: 0; }
+    .transfer-sides {
+      display: grid;
+      grid-template-columns: minmax(180px, var(--pane-split)) minmax(180px, 1fr);
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+    }
+    .transfer-side {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+    }
+    .transfer-source {
+      border-right: 1px solid var(--line);
+    }
+    .transfer-side table {
+      min-width: 0;
+    }
+    .cancel-transfer { height: 22px; padding: 0 8px; border: 1px solid #b9c2cb; border-radius: 4px; background: #fff; }
+    .cancel-transfer:hover { background: #ffecec; border-color: #d97c7c; }
+    .statusbar {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 22px;
+      align-items: center;
+      height: 24px;
+      padding: 0 6px;
+      background: #efefef;
+      color: #111;
+    }
+    .muted { color: var(--text-muted); }
+    .empty {
+      display: grid;
+      place-items: center;
+      height: 100%;
+      color: #7c858e;
+      text-align: center;
+      padding: 18px;
+    }
+    .empty-pane {
+      grid-template-rows: 1fr;
+      background: #fbfcfd;
+    }
+    .topbar-menu {
+      position: fixed;
+      z-index: 1200;
+      display: none;
+      min-width: 190px;
+      padding: 6px;
+      border: 1px solid #b8c4cf;
+      border-radius: 7px;
+      background: #ffffff;
+      box-shadow: 0 12px 28px rgba(15, 24, 32, .18);
+    }
+    .topbar-menu.open {
+      display: grid;
+      gap: 2px;
+    }
+    .topbar-menu button {
+      height: 32px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: #1f2933;
+      text-align: left;
+      font: inherit;
+    }
+    .topbar-menu button:hover {
+      background: #eaf3fc;
+    }
+    .file-context-menu {
+      position: fixed;
+      z-index: 1300;
+      display: none;
+      min-width: 180px;
+      padding: 6px;
+      border: 1px solid #b8c4cf;
+      border-radius: 7px;
+      background: #ffffff;
+      box-shadow: 0 12px 28px rgba(15, 24, 32, .18);
+    }
+    .file-context-menu.open {
+      display: grid;
+      gap: 2px;
+    }
+    .file-context-menu button {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 22px;
+      height: 30px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: #1f2933;
+      text-align: left;
+      font: inherit;
+    }
+    .file-context-menu .menu-check {
+      color: #18915b;
+      font-weight: 700;
+    }
+    .file-context-menu button:hover:not(:disabled) {
+      background: #eaf3fc;
+    }
+    .file-context-menu button:disabled {
+      color: #a7afb8;
+      cursor: default;
+    }
+    .file-context-menu .menu-separator {
+      height: 1px;
+      margin: 3px 4px;
+      background: #e5e9ed;
+    }
+    @media (max-width: 920px) {
+      body {
+        grid-template-columns: 1fr;
+        grid-template-rows: 25px auto 1fr 180px 24px;
+      }
+      aside {
+        grid-row: 2;
+        grid-column: 1;
+        border-right: 0;
+        border-bottom: 1px solid #2c333d;
+      }
+      .workspace {
+        grid-row: 3;
+        grid-column: 1;
+      }
+      .transfer-panel {
+        grid-row: 4;
+        grid-column: 1;
+      }
+      .workspace { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+      .pane-splitter, .transfer-splitter-guide { display: none; }
+      .pane { border-right: 0; border-bottom: 1px solid var(--line); }
+    }
+
+    .pathbox { position: relative; }
+    .path-menu-button { border: 0; background: transparent; padding: 0 5px; cursor: pointer; }
+    .path-menu { position: absolute; left: 0; top: calc(100% + 2px); z-index: 950; min-width: 170px; padding: 5px; border: 1px solid #c7d0d9; border-radius: 6px; background: #fff; box-shadow: 0 8px 24px rgba(0,0,0,.18); display:none; }
+    .path-menu.open { display:block; }
+    .path-menu button { width:100%; border:0; background:transparent; padding:7px 10px; text-align:left; border-radius:4px; }
+    .path-menu button:hover { background:#eaf3fb; }
+  </style>
+</head>
+<body>
+  <header class="app-titlebar">
+    <div class="titlebar-left">
+      <button id="sidebarToggle" class="titlebar-icon" data-i18n-title="toggleSidebar" data-i18n-aria-label="toggleSidebar">☰</button>
+    </div>
+    <nav id="tabs" class="tabs" data-i18n-title="openedServers">
+      <div id="leftTabs" class="tab-zone left" data-side="left"></div>
+      <div class="tab-divider" aria-hidden="true"></div>
+      <div id="rightTabs" class="tab-zone right" data-side="right"></div>
+    </nav>
+    <div class="titlebar-right">
+      <div class="window-controls">
+        <button id="windowMinimize" class="window-button minimize" data-i18n-title="minimize" data-i18n-aria-label="minimize">-</button>
+        <button id="windowMaximize" class="window-button maximize" data-i18n-title="maximizeRestore" data-i18n-aria-label="maximizeRestore">□</button>
+        <button id="windowClose" class="window-button close" data-i18n-title="close" data-i18n-aria-label="close">×</button>
+      </div>
+    </div>
+  </header>
+
+  <aside>
+    <div class="sidebar-heading"><h1>Msftp</h1><button id="languageToggle" class="language-toggle" type="button">中文</button></div>
+    <section class="form">
+      <label>
+        <span data-i18n="account">Account</span>
+        <select id="accountSelect">
+          <option value="">Select a saved account</option>
+        </select>
+      </label>
+      <label>
+        <span data-i18n="name">Name</span>
+        <input id="remoteName" autocomplete="off" placeholder="ubuntu">
+      </label>
+      <div class="row">
+        <label>
+          <span data-i18n="hostIP">Host/IP</span>
+          <input id="remoteHost" autocomplete="off" placeholder="192.168.1.10">
+        </label>
+        <label>
+          <span data-i18n="port">Port</span>
+          <input id="remotePort" inputmode="numeric" value="22">
+        </label>
+      </div>
+      <label>
+        <span data-i18n="username">Username</span>
+        <input id="remoteUser" autocomplete="username">
+      </label>
+      <label>
+        <span data-i18n="password">Password</span>
+        <input id="remotePass" type="password" autocomplete="current-password">
+      </label>
+      <div class="actions">
+        <button id="connectBtn" class="primary" data-i18n="connectSFTP">Connect SFTP</button>
+      </div>
+    </section>
+    <section class="accounts">
+      <button id="saveAccountBtn" data-i18n="saveAccount">Save account</button>
+      <button id="deleteAccountBtn" class="danger" data-i18n="deleteAccount">Delete account</button>
+      <button id="softwareInfo" class="info" type="button" data-i18n="softwareInfo">Software Information</button>
+    </section>
+    <p id="sideStatus" class="side-status" data-i18n="notConnected">Not connected</p>
+  </aside>
+
+  <div id="aboutOverlay" class="about-overlay" role="dialog" aria-modal="true" aria-labelledby="aboutTitle" hidden>
+    <article class="about-dialog">
+      <header class="about-header">
+        <h2 id="aboutTitle" data-i18n="softwareInfo">Software Information</h2>
+        <button id="aboutClose" class="about-close" type="button" data-i18n-title="close" data-i18n-aria-label="close">×</button>
+      </header>
+      <div class="about-content">
+        <section class="about-section">
+          <h3 data-i18n="softwareFeatures">Features</h3>
+          <p data-i18n="softwareDescription">Msftp is a Windows SFTP file manager.</p>
+        </section>
+        <section class="about-section">
+          <h3 data-i18n="disclaimerTitle">Disclaimer</h3>
+          <p data-i18n="disclaimerText">This software is provided as-is.</p>
+        </section>
+</div>
+    </article>
+  </div>
+
+  <div id="topbarMenu" class="topbar-menu"></div>
+  <div id="fileMenu" class="file-context-menu"></div>
+
+  <main class="workspace">
+    <section id="leftPane" class="pane" data-side="left" data-i18n-aria-label="leftFiles"></section>
+    <div id="paneSplitter" class="pane-splitter" aria-hidden="true"></div>
+    <section id="rightPane" class="pane" data-side="right" data-i18n-aria-label="rightFiles"></section>
+  </main>
+
+  <section class="transfer-panel">
+    <div id="transferSplitterGuide" class="transfer-splitter-guide" aria-hidden="true"></div>
+    <div id="transferView" class="bottom-table"></div>
+  </section>
+
+  <footer class="statusbar">
+    <span id="statusText">Ready</span>
+    <span data-i18n="binary">Binary</span>
+    <span id="objectCount">0 objects</span>
+    <span id="totalSize">0B</span>
+  </footer>
+
+  <script>
+  const languageKey = 'mshell-msftp.language.v1';
+  let currentLanguage = localStorage.getItem(languageKey) === 'zh' ? 'zh' : 'en';
+  const messages = {
+    en: {
+      toggleSidebar: 'Show or hide sidebar', openedServers: 'Open servers', minimize: 'Minimize', maximizeRestore: 'Maximize / Restore', close: 'Close',
+      account: 'Account', name: 'Name', hostIP: 'Host/IP', port: 'Port', username: 'Username', password: 'Password', connectSFTP: 'Connect SFTP',
+      saveAccount: 'Save account', deleteAccount: 'Delete account', softwareInfo: 'Software Information', softwareFeatures: 'Features',
+      softwareDescription: 'Msftp is a Windows SFTP file manager for local and remote file administration. It supports dual-pane browsing, upload and download, cross-pane transfers, rename, delete, permission changes, file opening and editing, and transfer progress management.',
+      disclaimerTitle: 'Disclaimer', disclaimerText: 'This software is provided as-is and is intended only for lawful file and server administration. Verify paths, permissions, operations, and backups before use. The author is not responsible for data loss, service interruption, security incidents, or misuse.',
+
+      notConnected: 'Not connected', leftFiles: 'Left files', rightFiles: 'Right files', binary: 'Binary',
+      selectSavedAccount: 'Select a saved account', local: 'Local', localNamed: 'Local: {name}', autoConnecting: 'Connecting with the current mshell terminal credentials...',
+      autoConnectParseFailed: 'Failed to parse mshell SFTP login information', connecting: 'Connecting...', connectedTo: 'Connected: {name}', keepOneLocalTab: 'Keep at least one local tab',
+      closeTab: 'Close', noServerConnection: 'No server connection', transferRemote: 'Transfer the selected remote item to the other pane', transferLocal: 'Transfer the selected local item to the other pane',
+      back: 'Back to the previously displayed directory', refresh: 'Refresh', remotePathPlaceholder: 'Enter / for the root directory or /root for the root home directory', transfer: 'Transfer',
+      readingRemote: 'Reading remote directory...', readingLocal: 'Reading local directory...', nameHeader: 'Name', sizeHeader: 'Size', typeHeader: 'Type', modifiedHeader: 'Modified', modeHeader: 'Mode',
+      parentDirectory: 'Go to parent directory', folder: 'Folder', readingDirectory: 'Reading directory...', ready: 'Ready', noPreviousDirectory: 'No previous directory',
+      selectTransferItem: 'Select an item to transfer', noTargetTab: 'The other pane has no destination tab', statusDone: 'Done', statusFailed: 'Failed', statusCanceled: 'Canceled',
+      statusCanceling: 'Canceling', statusRunning: 'Running', cancel: 'Cancel', progressHeader: 'Progress', statusHeader: 'Status', sourcePathHeader: 'Source path',
+      destinationPathHeader: 'Destination path', speedHeader: 'Speed', etaHeader: 'ETA', elapsedHeader: 'Elapsed', open: 'Open', edit: 'Edit', copy: 'Copy', paste: 'Paste',
+      computer: 'This PC', desktop: 'Desktop', downloads: 'Downloads', documents: 'Documents', copyPath: 'Copy path', rename: 'Rename', delete: 'Delete', chmod: 'Permissions', showHidden: 'Show hidden files', copied: 'Copied: {name}', nothingToPaste: 'Nothing to paste',
+      opened: 'Opened {name}', editing: 'Editing {name}', renamePrompt: 'Rename', deleteConfirm: 'Delete {name}?', modePrompt: 'Mode, for example 755 or 0644', pathCopied: 'Path copied',
+      copyPathPrompt: 'Copy path', clear: 'Clear', newLocal: 'New local', objects: '{count} objects', savedNotConnected: 'Account saved (not connected)', selectAccount: 'Select a saved account',
+      accountDeleted: 'Account deleted', hostUserRequired: 'Host and username are required', transferStarted: 'Transferring {name}', connectTimedOut: 'Connection timed out', requestTimedOut: 'Request timed out'
+    },
+    zh: {
+      toggleSidebar: '显示或隐藏左侧面板', openedServers: '已打开的服务器', minimize: '最小化', maximizeRestore: '最大化/还原', close: '关闭',
+      account: '账号', name: '名称', hostIP: '主机/IP', port: '端口', username: '用户名', password: '密码', connectSFTP: '连接 SFTP',
+      saveAccount: '保存账号', deleteAccount: '删除账号', softwareInfo: '软件说明', softwareFeatures: '软件功能',
+      softwareDescription: 'msftp 是一款用于本地和远程文件管理的 Windows SFTP 工具，支持双栏浏览、上传下载、跨栏传输、重命名、删除、修改权限、打开和编辑文件，以及传输进度管理。',
+      disclaimerTitle: '使用声明', disclaimerText: '本软件按现状提供，仅限用于合法的文件和服务器管理。使用前请确认路径、操作权限、执行内容和数据备份。因误操作、数据丢失、服务中断、安全事件或不当使用造成的后果由使用者自行承担。',
+
+      notConnected: '未连接', leftFiles: '左侧文件', rightFiles: '右侧文件', binary: '二进制',
+      selectSavedAccount: '选择已保存账号', local: '本地', localNamed: '本地: {name}', autoConnecting: '正在使用 mshell 当前终端登录信息连接 SFTP...',
+      autoConnectParseFailed: 'mshell SFTP 登录信息解析失败', connecting: '正在连接...', connectedTo: '已连接：{name}', keepOneLocalTab: '至少保留一个本地标签',
+      closeTab: '关闭', noServerConnection: '没有服务器连接', transferRemote: '传输选中远程项目到另一栏', transferLocal: '传输选中本地项目到另一栏',
+      back: '返回上一次显示的目录', refresh: '刷新', remotePathPlaceholder: '输入 / 进根目录，输入 /root 进 root 家目录', transfer: '传输',
+      readingRemote: '正在读取远程目录...', readingLocal: '正在读取本地目录...', nameHeader: '名称', sizeHeader: '大小', typeHeader: '类型', modifiedHeader: '修改时间', modeHeader: '权限',
+      parentDirectory: '返回上一级', folder: '文件夹', readingDirectory: '正在读取目录...', ready: '就绪', noPreviousDirectory: '没有上一次显示的目录',
+      selectTransferItem: '请选择要传输的项目', noTargetTab: '另一栏没有目标标签', statusDone: '完成', statusFailed: '失败', statusCanceled: '已取消',
+      statusCanceling: '正在取消', statusRunning: '传输中', cancel: '取消', progressHeader: '进度', statusHeader: '状态', sourcePathHeader: '源路径',
+      destinationPathHeader: '目标路径', speedHeader: '速度', etaHeader: '剩余时间', elapsedHeader: '已用时间', open: '打开', edit: '编辑', copy: '复制', paste: '粘贴',
+      computer: '此电脑', desktop: '桌面', downloads: '下载', documents: '文档', copyPath: '复制路径', rename: '重命名', delete: '删除', chmod: '权限', showHidden: '显示隐藏文件', copied: '已复制：{name}', nothingToPaste: '没有可粘贴的内容',
+      opened: '已打开 {name}', editing: '正在编辑 {name}', renamePrompt: '重命名', deleteConfirm: '确定删除 {name}？', modePrompt: '权限模式，例如 755 或 0644', pathCopied: '路径已复制',
+      copyPathPrompt: '复制路径', clear: '清空', newLocal: '新建本地', objects: '{count} 个对象', savedNotConnected: '已保存账号（未连接）', selectAccount: '请选择已保存账号',
+      accountDeleted: '账号已删除', hostUserRequired: '主机和用户名不能为空', transferStarted: '正在传输 {name}', connectTimedOut: '连接超时', requestTimedOut: '请求超时'
+    }
+  };
+  function t(key, vars = {}) {
+    let text = messages[currentLanguage]?.[key] ?? messages.en[key] ?? key;
+    Object.entries(vars).forEach(([name, value]) => { text = text.replaceAll(`{${name}}`, String(value)); });
+    return text;
+  }
+  function applyStaticLanguage() {
+    document.documentElement.lang = currentLanguage === 'zh' ? 'zh-CN' : 'en';
+    document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.dataset.i18n); });
+    document.querySelectorAll('[data-i18n-title]').forEach(node => { node.title = t(node.dataset.i18nTitle); });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(node => { node.placeholder = t(node.dataset.i18nPlaceholder); });
+    document.querySelectorAll('[data-i18n-aria-label]').forEach(node => { node.setAttribute('aria-label', t(node.dataset.i18nAriaLabel)); });
+    document.querySelectorAll('[data-i18n-alt]').forEach(node => { node.alt = t(node.dataset.i18nAlt); });
+    const button = document.getElementById('languageToggle');
+    if (button) button.textContent = currentLanguage === 'en' ? '中文' : 'English';
+  }
+  function applyLanguage() {
+    applyStaticLanguage();
+    state.tabs.filter(tab => tab.kind === 'local').forEach(tab => { tab.title = localTabTitle(tab.path); });
+    renderAccountSelect(); renderTabs(); renderPanes(); renderTransfers();
+    const connectedTab = state.tabs.find(tab => tab.kind === 'remote' && tab.connected);
+    els.sideStatus.textContent = connectedTab ? t('connectedTo', { name: connectedTab.baseTitle || connectedTab.title }) : t('notConnected');
+    const active = activeTabForSide(state.activePaneSide);
+    if (active) updateStatsForTab(active); else setStatus(t('ready'));
+  }
+  function toggleLanguage() {
+    currentLanguage = currentLanguage === 'en' ? 'zh' : 'en';
+    localStorage.setItem(languageKey, currentLanguage);
+    applyLanguage();
+  }
+  function openAbout() {
+    const overlay = qs('#aboutOverlay');
+    overlay.hidden = false;
+    overlay.classList.add('open');
+    qs('#aboutClose')?.focus();
+  }
+  function closeAbout() {
+    const overlay = qs('#aboutOverlay');
+    if (!overlay || overlay.hidden) return;
+    overlay.classList.remove('open');
+    overlay.hidden = true;
+    qs('#softwareInfo')?.focus();
+  }
+  const queryParams = new URLSearchParams(location.search);
+  const pageToken = queryParams.get('token') || '';
+  const autoConnectParam = queryParams.get('autoconnect') || '';
+  const qs = value => document.querySelector(value);
+  const accountsKey = 'msftp.accounts.v1';
+  const lastLoginKey = 'msftp.login.v1';
+  const tabLayoutKey = 'msftp.tab-layout.v2';
+  const columnWidthsKey = 'msftp.column-widths.v2';
+  const paneSplitKey = 'msftp.pane-split.v1';
+  const state = {
+    tabs: [{
+      id: 'local-1', kind: 'local', side: 'left', title: t('local'), connected: true,
+      path: '', parent: '', entries: [], selected: null, navHistory: [], loaded: false
+    }],
+    activeSideTabIds: { left: 'local-1', right: '' },
+    activeTabId: 'local-1',
+    activePaneSide: 'left',
+    accounts: [],
+    transfers: [],
+    logs: [],
+    columnWidths: {},
+    clipboard: null,
+    showHidden: false,
+    connecting: false,
+    paneSplit: 0.5
+  };
+  let draggingTabId = '';
+  const smartScrollbarBound = new WeakSet();
+  const els = {
+    leftTabs: qs('#leftTabs'), rightTabs: qs('#rightTabs'),
+    leftPane: qs('#leftPane'), rightPane: qs('#rightPane'),
+    topbarMenu: qs('#topbarMenu'), fileMenu: qs('#fileMenu'),
+    statusText: qs('#statusText'), objectCount: qs('#objectCount'), totalSize: qs('#totalSize'),
+    sideStatus: qs('#sideStatus'), accountSelect: qs('#accountSelect')
+  };
+
+  applyStaticLanguage();
+  bindChrome();
+  bindActions();
+  bindSmartScrollbars(document);
+  loadPaneSplit();
+  loadColumnWidths();
+  loadAccounts();
+  loadSavedLogin();
+  loadTabLayout();
+  renderTabs();
+  renderPanes();
+  renderTransfers();
+  loadTab(state.tabs[0], '', { skipHistory: true });
+  handleStartupAutoConnect();
+
+  function bindChrome() {
+    document.querySelector('.app-titlebar').addEventListener('mousedown', event => {
+      if (event.button === 0 && !event.target.closest('button, .tab, .topbar-menu')) window.windowDrag?.();
+    });
+    qs('#sidebarToggle')?.addEventListener('click', () => document.body.classList.toggle('sidebar-collapsed'));
+    qs('#languageToggle')?.addEventListener('click', toggleLanguage);
+    qs('#softwareInfo')?.addEventListener('click', openAbout);
+    qs('#aboutClose')?.addEventListener('click', closeAbout);
+    qs('#aboutOverlay')?.addEventListener('click', event => { if (event.target === qs('#aboutOverlay')) closeAbout(); });
+    qs('#windowMinimize').addEventListener('click', () => window.windowMinimize?.());
+    qs('#windowMaximize').addEventListener('click', () => window.windowToggleMaximize?.());
+    qs('#windowClose').addEventListener('click', () => window.windowClose?.());
+    qs('#tabs').addEventListener('contextmenu', event => { event.preventDefault(); openTopbarMenu(event.clientX, event.clientY); });
+    qs('#tabs').addEventListener('click', event => {
+      if (event.target.closest('.tab, button')) return;
+      openTopbarMenu(event.clientX, event.clientY);
+    });
+    document.addEventListener('click', event => {
+      if (!event.target.closest('.topbar-menu') && !event.target.closest('#tabs')) closeTopbarMenu();
+      if (!event.target.closest('.file-context-menu')) closeFileMenu();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') { closeTopbarMenu(); closeFileMenu(); closeAbout(); }
+    });
+  }
+
+  function bindActions() {
+    bindPaneSplitters();
+    qs('#connectBtn').addEventListener('click', () => connectRemote(preferConnectSide()));
+    qs('#saveAccountBtn').addEventListener('click', saveAccount);
+    qs('#deleteAccountBtn').addEventListener('click', deleteAccount);
+    els.accountSelect.addEventListener('change', fillSelectedAccount);
+    qs('#transferView').addEventListener('contextmenu', event => {
+      event.preventDefault(); openBottomMenu(event.clientX, event.clientY);
+    });
+    [els.leftTabs, els.rightTabs].forEach(zone => {
+      zone.addEventListener('dragover', event => {
+        const id = draggingTabId || event.dataTransfer?.getData('text/x-msftp-tab') || event.dataTransfer?.getData('text/plain');
+        if (!id) return;
+        event.preventDefault();
+        const target = event.target.closest('.tab');
+        clearTabDropMarkers();
+        if (target && zone.contains(target) && target.dataset.tabId !== id) {
+          markTabDropPosition(target, event);
+        } else {
+          zone.classList.add('drop-ready');
+        }
+      });
+      zone.addEventListener('dragleave', event => {
+        if (!zone.contains(event.relatedTarget)) { zone.classList.remove('drop-ready'); clearTabDropMarkers(); }
+      });
+      zone.addEventListener('drop', event => {
+        const id = draggingTabId || event.dataTransfer?.getData('text/x-msftp-tab') || event.dataTransfer?.getData('text/plain');
+        if (!id) return;
+        event.preventDefault();
+        const target = event.target.closest('.tab');
+        const side = normalizeSide(zone.dataset.side);
+        if (target && zone.contains(target) && target.dataset.tabId !== id) {
+          moveTab(id, side, { targetId: target.dataset.tabId, after: isDropAfter(target, event) });
+        } else {
+          moveTab(id, side, { toEnd: true });
+        }
+        clearTabDropMarkers();
+      });
+    });
+  }
+
+  function preferConnectSide() {
+    const other = state.activePaneSide === 'left' ? 'right' : 'left';
+    if (!activeTabForSide(other)) return other;
+    if (!activeTabForSide('right')) return 'right';
+    return other;
+  }
+
+  async function handleStartupAutoConnect() {
+    const account = decodeAutoConnectAccount(autoConnectParam);
+    if (!account || !account.host || !account.username) return;
+    fillAccount({
+      name: account.name || `${account.username}@${account.host}:${account.port || '22'}`,
+      host: account.host,
+      port: account.port || '22',
+      username: account.username,
+      password: account.password || ''
+    });
+    setStatus(t('autoConnecting'));
+    await sleep(80);
+    await connectRemote(preferConnectSide());
+  }
+
+  function decodeAutoConnectAccount(value) {
+    if (!value) return null;
+    try {
+      let text = String(value).replace(/-/g, '+').replace(/_/g, '/');
+      while (text.length % 4) text += '=';
+      const binary = atob(text);
+      const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+      const decoded = new TextDecoder().decode(bytes);
+      const account = JSON.parse(decoded);
+      return {
+        name: String(account.name || '').trim(),
+        host: String(account.host || '').trim(),
+        port: String(account.port || '22').trim() || '22',
+        username: String(account.username || '').trim(),
+        password: String(account.password || '')
+      };
+    } catch (error) {
+      setStatus(t('autoConnectParseFailed'));
+      return null;
+    }
+  }
+
+  async function connectRemote(side) {
+    if (state.connecting) return setStatus(t('connecting'));
+    const payload = formAccount();
+    if (!payload.host || !payload.username) return setStatus(t('hostUserRequired'));
+    state.connecting = true;
+    qs('#connectBtn').disabled = true;
+    setStatus(t('connecting'));
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    try {
+      const data = await api('/api/connect', { method: 'POST', body: JSON.stringify(payload), signal: controller.signal });
+      const homePath = data.home || '.';
+      const tab = addRemoteTab(data.label, accountKey(payload), data.sessionId, normalizeSide(side), homePath);
+      els.sideStatus.textContent = t('connectedTo', { name: data.label });
+      localStorage.setItem(lastLoginKey, JSON.stringify({...payload, password: ''}));
+      addLog('connected ' + data.label);
+      await loadTab(tab, homePath, { skipHistory: true });
+      return true;
+    } catch (error) {
+      fail(error.name === 'AbortError' ? new Error(t('connectTimedOut')) : error);
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      state.connecting = false;
+      qs('#connectBtn').disabled = false;
+    }
+  }
+
+  function addRemoteTab(title, key, sessionId, side, homePath = '') {
+    const baseTitle = title || 'SFTP';
+    const count = state.tabs.filter(tab => tab.kind === 'remote' && (tab.baseTitle || tab.title) === baseTitle).length;
+    const tab = {
+      id: 'remote-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+      kind: 'remote', side, title: count ? `${baseTitle} #${count + 1}` : baseTitle,
+      baseTitle, status: 'SFTP', connected: true, key, sessionId,
+      path: '', parent: '', entries: [], selected: null, navHistory: [],
+      loaded: false, loading: false, error: ''
+    };
+    state.tabs.push(tab);
+    activateTab(tab.id, { skipLoad: true });
+    saveTabLayout();
+    return tab;
+  }
+
+  function addLocalTab(side) {
+    const active = activeTabForSide(state.activePaneSide);
+    const source = active?.kind === 'local' ? active : state.tabs.find(t => t.kind === 'local');
+    const tab = {
+      id: 'local-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+      kind: 'local', side: normalizeSide(side), title: localTabTitle(source?.path || ''), connected: true,
+      path: source?.path || '', parent: source?.parent || '', entries: [...(source?.entries || [])], selected: source?.selected ?? null,
+      navHistory: [...(source?.navHistory || [])], loaded: !!source?.loaded
+    };
+    state.tabs.push(tab);
+    activateTab(tab.id);
+    if (!tab.loaded) loadTab(tab, '', { skipHistory: true });
+    saveTabLayout();
+  }
+
+  async function closeTab(id) {
+    const tab = state.tabs.find(t => t.id === id);
+    if (!tab) return;
+    if (tab.kind === 'local' && state.tabs.filter(t => t.kind === 'local').length <= 1) {
+      setStatus(t('keepOneLocalTab'));
+      return;
+    }
+    if (tab.kind === 'remote' && tab.sessionId) {
+      try { await api('/api/disconnect', { method: 'POST', body: JSON.stringify({ sessionId: tab.sessionId }) }); }
+      catch (error) { addLog(error.message || String(error)); }
+    }
+    state.tabs = state.tabs.filter(t => t.id !== id);
+    ['left','right'].forEach(side => { if (state.activeSideTabIds[side] === id) state.activeSideTabIds[side] = ''; });
+    if (state.activeTabId === id) state.activeTabId = '';
+    ensureActiveSideTabs();
+    saveTabLayout();
+    renderTabs();
+    renderPanes();
+  }
+
+  function activateTab(id, options = {}) {
+    const tab = state.tabs.find(t => t.id === id);
+    if (!tab) return;
+    state.activeSideTabIds[tab.side] = tab.id;
+    state.activeTabId = tab.id;
+    state.activePaneSide = tab.side;
+    ensureActiveSideTabs();
+    renderTabs();
+    renderPanes();
+    if (!tab.loaded && !tab.loading && !options.skipLoad) {
+      loadTab(tab, tab.kind === 'remote' ? '.' : '', { skipHistory: true });
+    } else if (tab.loaded) {
+      updateStatsForTab(tab);
+    }
+  }
+
+  function activeTabForSide(side) {
+    const id = state.activeSideTabIds[normalizeSide(side)];
+    return state.tabs.find(t => t.id === id && t.side === normalizeSide(side)) || null;
+  }
+
+  function ensureActiveSideTabs() {
+    ['left','right'].forEach(side => {
+      const tabs = state.tabs.filter(t => t.side === side);
+      if (!tabs.length) { state.activeSideTabIds[side] = ''; return; }
+      if (!tabs.some(t => t.id === state.activeSideTabIds[side])) {
+        state.activeSideTabIds[side] = tabs[0].id;
+      }
+    });
+    if (!state.activeTabId || !state.tabs.some(t => t.id === state.activeTabId)) {
+      state.activeTabId = state.activeSideTabIds[state.activePaneSide] || state.activeSideTabIds.left || state.activeSideTabIds.right || '';
+    }
+  }
+
+  function moveTab(id, side, options = {}) {
+    side = normalizeSide(side);
+    const from = state.tabs.findIndex(t => t.id === id);
+    if (from < 0) return;
+    const [tab] = state.tabs.splice(from, 1);
+    tab.side = side;
+    let to = -1;
+    if (options.targetId && options.targetId !== id) {
+      const targetIndex = state.tabs.findIndex(t => t.id === options.targetId);
+      if (targetIndex >= 0) to = targetIndex + (options.after ? 1 : 0);
+    }
+    if (to < 0) {
+      to = state.tabs.length;
+      state.tabs.forEach((item, index) => { if (item.side === side) to = index + 1; });
+    }
+    state.tabs.splice(Math.max(0, Math.min(to, state.tabs.length)), 0, tab);
+    state.activeSideTabIds[side] = id;
+    state.activeTabId = id;
+    state.activePaneSide = side;
+    ensureActiveSideTabs();
+    saveTabLayout();
+    renderTabs();
+    renderPanes();
+  }
+
+  function renderTabs() {
+    ensureActiveSideTabs();
+    els.leftTabs.innerHTML = '';
+    els.rightTabs.innerHTML = '';
+    state.tabs.forEach(tab => {
+      const node = document.createElement('div');
+      const active = state.activeSideTabIds[tab.side] === tab.id;
+      node.className = 'tab' + (tab.connected ? ' connected' : '') + (active ? ' active' : '');
+      node.draggable = true;
+      node.dataset.tabId = tab.id;
+      node.dataset.side = tab.side;
+      const statusHTML = tab.status ? `<span class="tab-status-text">${escapeHTML(tab.status)}</span>` : '';
+      node.innerHTML = `<span class="tab-status-dot"></span><span class="tab-title">${escapeHTML(tab.title)}</span>${statusHTML}<button class="tab-close" type="button" title="${escapeAttr(t('closeTab'))}">×</button>`;
+      node.addEventListener('dragstart', event => {
+        if (event.target.closest('button')) { event.preventDefault(); return; }
+        draggingTabId = tab.id;
+        node.classList.add('dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/x-msftp-tab', tab.id);
+        event.dataTransfer.setData('text/plain', tab.id);
+      });
+      node.addEventListener('dragover', event => {
+        const id = draggingTabId || event.dataTransfer?.getData('text/x-msftp-tab') || event.dataTransfer?.getData('text/plain');
+        if (!id || id === tab.id) return;
+        event.preventDefault(); clearTabDropMarkers(); markTabDropPosition(node, event);
+      });
+      node.addEventListener('dragleave', () => node.classList.remove('drop-before', 'drop-after'));
+      node.addEventListener('drop', event => {
+        const id = draggingTabId || event.dataTransfer?.getData('text/x-msftp-tab') || event.dataTransfer?.getData('text/plain');
+        if (!id || id === tab.id) return;
+        event.preventDefault();
+        moveTab(id, tab.side, { targetId: tab.id, after: isDropAfter(node, event) });
+        clearTabDropMarkers();
+      });
+      node.addEventListener('dragend', () => { draggingTabId = ''; clearTabDropMarkers(); });
+      node.addEventListener('click', event => {
+        if (event.target.closest('.tab-close')) { closeTab(tab.id); return; }
+        activateTab(tab.id);
+      });
+      (tab.side === 'left' ? els.leftTabs : els.rightTabs).appendChild(node);
+    });
+  }
+
+  function renderPanes() {
+    renderPane('left');
+    renderPane('right');
+  }
+
+  function renderPane(side) {
+    const pane = side === 'left' ? els.leftPane : els.rightPane;
+    const tab = activeTabForSide(side);
+    pane.classList.toggle('active', state.activePaneSide === side);
+    pane.style.gridColumn = side === 'left' ? '1' : '3';
+    if (!tab) {
+      pane.innerHTML = `<div class="empty">${escapeHTML(t('noServerConnection'))}</div>`;
+      pane.onclick = () => { state.activePaneSide = side; applyPaneActiveClasses(); };
+      return;
+    }
+    const remote = tab.kind === 'remote';
+    const transferTitle = remote ? t('transferRemote') : t('transferLocal');
+    pane.innerHTML = `
+      <div class="bar">
+        <div class="nav">
+          <button class="icon-btn" data-action="back" title="${escapeAttr(t('back'))}">←</button>
+          <button class="icon-btn" data-action="refresh" title="${escapeAttr(t('refresh'))}">⟳</button>
+        </div>
+        <div class="pathbox"><button class="folder path-menu-button" type="button" title="${remote ? '' : escapeAttr(t('desktop'))}">▣⌄</button><input class="path-input" value="${escapeAttr(tab.path || '')}" placeholder="${remote ? escapeAttr(t('remotePathPlaceholder')) : ''}">${remote ? '' : `<div class="path-menu"><button data-special="desktop">${escapeHTML(t('desktop'))}</button><button data-special="downloads">${escapeHTML(t('downloads'))}</button><button data-special="documents">${escapeHTML(t('documents'))}</button></div>`}</div>
+        <button class="tool-btn" data-action="transfer" title="${transferTitle}">${escapeHTML(t('transfer'))}</button>
+      </div>
+      <div class="file-list"></div>`;
+    const input = pane.querySelector('.path-input');
+    const list = pane.querySelector('.file-list');
+    input.addEventListener('keydown', event => { if (event.key === 'Enter') loadTab(tab, input.value); });
+    input.addEventListener('contextmenu', event => {
+      event.stopPropagation();
+      // Keep the native editable-field menu available for copy and paste.
+    });
+    if (!remote) {
+      const menuButton = pane.querySelector('.path-menu-button');
+      const pathMenu = pane.querySelector('.path-menu');
+      menuButton.addEventListener('click', async event => {
+        event.stopPropagation(); closeFileMenu(); closeTopbarMenu();
+        pathMenu.classList.toggle('open');
+      });
+      pathMenu.querySelectorAll('[data-special]').forEach(button => button.addEventListener('click', async event => {
+        event.stopPropagation();
+        const paths = await api('/api/local-special');
+        pathMenu.classList.remove('open');
+        loadTab(tab, paths[button.dataset.special] || '');
+      }));
+      document.addEventListener('click', () => pathMenu.classList.remove('open'), { once: true });
+    }
+    pane.querySelector('[data-action="back"]').addEventListener('click', () => goHistoryBack(tab));
+    pane.querySelector('[data-action="refresh"]').addEventListener('click', () => loadTab(tab, tab.path, { skipHistory: true }));
+    pane.querySelector('[data-action="transfer"]').addEventListener('click', () => transferSelected(side));
+    pane.onclick = event => {
+      if (!event.target.closest('.file-list')) return;
+      if (event.target.closest('tr')) return;
+      activatePaneSide(side);
+    };
+    renderListForTab(tab, list, side);
+    bindSmartScrollbar(list);
+  }
+
+  function activatePaneSide(side) {
+    side = normalizeSide(side);
+    state.activePaneSide = side;
+    const tab = activeTabForSide(side);
+    if (tab) state.activeTabId = tab.id;
+    applyPaneActiveClasses();
+    if (tab) updateStatsForTab(tab);
+  }
+
+  function applyPaneActiveClasses() {
+    els.leftPane.classList.toggle('active', state.activePaneSide === 'left');
+    els.rightPane.classList.toggle('active', state.activePaneSide === 'right');
+  }
+
+  function selectedIndexSet(tab) {
+    if (!(tab.selectedIndices instanceof Set)) tab.selectedIndices = new Set(tab.selected == null ? [] : [tab.selected]);
+    return tab.selectedIndices;
+  }
+
+  function updateSelectionInHost(host, tab) {
+    const selected = selectedIndexSet(tab);
+    host.querySelectorAll('tbody tr[data-index]').forEach(row => {
+      row.classList.toggle('selected', selected.has(Number(row.dataset.index)));
+    });
+  }
+
+  function preserveScroll(host, callback) {
+    const scrollTop = host.scrollTop;
+    const scrollLeft = host.scrollLeft;
+    callback();
+    host.scrollTop = scrollTop;
+    host.scrollLeft = scrollLeft;
+  }
+
+  function renderListForTab(tab, host, side) {
+    if (tab.loading) {
+      host.innerHTML = `<div class="empty">${tab.kind === 'remote' ? t('readingRemote') : t('readingLocal')}</div>`;
+      return;
+    }
+    if (tab.error) {
+      host.innerHTML = `<div class="empty">${escapeHTML(tab.error)}</div>`;
+      return;
+    }
+    if (!tab.loaded) {
+      host.innerHTML = `<div class="empty">${escapeHTML(t('ready'))}</div>`;
+      return;
+    }
+    const headers = tab.kind === 'remote' ? [t('nameHeader'),t('sizeHeader'),t('typeHeader'),t('modifiedHeader'),t('modeHeader')] : [t('nameHeader'),t('sizeHeader'),t('typeHeader'),t('modifiedHeader'),''];
+    const classes = ['name-col','size-col','type-col','time-col','mode-col'];
+    const sortKeys = tab.kind === 'remote' ? ['name','size','type','modified','mode'] : ['name','size','type','modified',null];
+    const sortState = entrySortState(tab);
+    const parentRow = tab.parent ? `<tr data-parent="true" class="parent-row"><td class="name-col"><span class="entry-name" title="${escapeAttr(t('parentDirectory'))}"><span class="entry-icon folder"></span><span class="entry-label">..</span></span></td><td class="size-col"></td><td class="type-col">${escapeHTML(t('folder'))}</td><td class="time-col"></td><td class="mode-col"></td></tr>` : '';
+    const rows = visibleEntries(tab).map(({ entry, index }) => `<tr data-index="${index}" class="${selectedIndexSet(tab).has(index) ? 'selected' : ''}"><td class="name-col"><span class="entry-name" title="${escapeAttr(entry.name)}"><span class="entry-icon ${entry.isDir ? 'folder' : 'file'}"></span><span class="entry-label">${escapeHTML(entry.name)}</span></span></td><td class="size-col">${entry.isDir ? '' : formatBytes(entry.size)}</td><td class="type-col">${escapeHTML(entry.type)}</td><td class="time-col">${escapeHTML(entry.modified)}</td><td class="mode-col">${escapeHTML(entry.mode || '')}</td></tr>`).join('');
+    host.innerHTML = resizableTableHTML(tab.kind + '-files-' + side, headers, parentRow + rows, classes);
+    bindColumnResizers(host.querySelector('table'));
+    host.querySelectorAll('thead th').forEach((header, index) => {
+      const key = sortKeys[index];
+      if (!key) return;
+      const active = sortState.key === key;
+      header.classList.add('sortable');
+      header.dataset.sortKey = key;
+      header.setAttribute('aria-sort', active ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none');
+      const indicator = document.createElement('span');
+      indicator.className = 'sort-indicator';
+      indicator.textContent = active ? (sortState.direction === 'asc' ? '▲' : '▼') : '';
+      const resizer = header.querySelector('.col-resizer');
+      header.insertBefore(indicator, resizer);
+      header.addEventListener('click', event => {
+        if (event.target.closest('.col-resizer')) return;
+        event.stopPropagation();
+        tab.entrySort = {
+          key,
+          direction: active && sortState.direction === 'asc' ? 'desc' : 'asc'
+        };
+        preserveScroll(host, () => renderListForTab(tab, host, side));
+      });
+    });
+    host.querySelectorAll('tbody tr[data-index]').forEach(row => {
+      row.addEventListener('click', event => {
+        preserveScroll(host, () => {
+          const index = Number(row.dataset.index);
+          const selected = selectedIndexSet(tab);
+          if (event.ctrlKey || event.metaKey) {
+            if (selected.has(index)) selected.delete(index); else selected.add(index);
+            tab.selected = selected.has(index) ? index : (selected.size ? [...selected][selected.size - 1] : null);
+          } else {
+            selected.clear(); selected.add(index); tab.selected = index;
+          }
+          activatePaneSide(side);
+          updateSelectionInHost(host, tab);
+        });
+      });
+      row.addEventListener('dblclick', () => {
+        const entry = tab.entries[Number(row.dataset.index)];
+        if (entry.isDir) loadTab(tab, entry.path); else openEntry(tab, entry);
+      });
+    });
+    host.querySelectorAll('tbody tr[data-parent]').forEach(row => row.addEventListener('dblclick', () => loadTab(tab, tab.parent)));
+    host.onclick = event => {
+      if (event.target.closest('thead') || event.target.closest('tr')) return;
+      preserveScroll(host, () => {
+        tab.selected = null; selectedIndexSet(tab).clear();
+        activatePaneSide(side);
+        updateSelectionInHost(host, tab);
+      });
+    };
+    host.oncontextmenu = event => {
+      event.preventDefault(); closeTopbarMenu();
+      const row = event.target.closest('tr[data-index]');
+      preserveScroll(host, () => {
+        const index = row && host.contains(row) ? Number(row.dataset.index) : null;
+        const selected = selectedIndexSet(tab);
+        if (index == null) { selected.clear(); tab.selected = null; }
+        else if (!selected.has(index)) { selected.clear(); selected.add(index); tab.selected = index; }
+        activatePaneSide(side);
+        updateSelectionInHost(host, tab);
+      });
+      openFileMenu(tab, side, event.clientX, event.clientY);
+    };
+  }
+
+  async function loadTab(tab, targetPath, options = {}) {
+    if (!tab) return false;
+    const loadId = (tab.loadId || 0) + 1;
+    tab.loadId = loadId;
+    tab.loading = true;
+    tab.error = '';
+    renderPanes();
+    setStatus(t('readingDirectory'));
+
+    try {
+      const currentPath = tab.path;
+      const endpoint = tab.kind === 'local'
+        ? '/api/local?path=' + encodeURIComponent(targetPath || '')
+        : '/api/remote?sessionId=' + encodeURIComponent(tab.sessionId || '') + '&path=' + encodeURIComponent(targetPath || '.');
+      const data = await api(endpoint, { timeoutMs: 15000 });
+      if (tab.loadId !== loadId) return false;
+      rememberDirectory(tab, currentPath, data.path, options);
+      Object.assign(tab, data, {
+        selected: null,
+        selectedIndices: new Set(),
+        loaded: true,
+        loading: false,
+        error: ''
+      });
+      if (tab.kind === 'local') tab.title = localTabTitle(tab.path);
+      renderTabs(); renderPanes(); updateStatsForTab(tab); setStatus(t('ready'));
+      return true;
+    } catch (error) {
+      if (tab.loadId !== loadId) return false;
+      tab.loading = false;
+      tab.loaded = false;
+      tab.error = error.message || String(error);
+      renderPanes();
+      fail(error); return false;
+    }
+  }
+
+  function rememberDirectory(tab, fromPath, toPath, options = {}) {
+    if (options.skipHistory || !fromPath || !toPath || sameDirectory(fromPath, toPath)) return;
+    tab.navHistory ||= [];
+    if (tab.navHistory[tab.navHistory.length - 1] !== fromPath) tab.navHistory.push(fromPath);
+    if (tab.navHistory.length > 50) tab.navHistory.shift();
+  }
+
+  async function goHistoryBack(tab) {
+    tab.navHistory ||= [];
+    if (!tab.navHistory.length) return setStatus(t('noPreviousDirectory'));
+    const previousPath = tab.navHistory.pop();
+    const ok = await loadTab(tab, previousPath, { skipHistory: true });
+    if (!ok) tab.navHistory.push(previousPath);
+  }
+
+  function selected(tab) {
+    if (!tab || tab.selected == null) return null;
+    return tab.entries[tab.selected] || null;
+  }
+
+  function otherSide(side) { return normalizeSide(side) === 'left' ? 'right' : 'left'; }
+
+  async function transferSelected(sourceSide) {
+    const sourceTab = activeTabForSide(sourceSide);
+    const destTab = activeTabForSide(otherSide(sourceSide));
+    const entry = selected(sourceTab);
+    if (!sourceTab || !entry) return setStatus(t('selectTransferItem'));
+    if (!destTab) return setStatus(t('noTargetTab'));
+    const destPath = destTab.kind === 'local' ? joinLocal(destTab.path, entry.name) : joinRemote(destTab.path || '/', entry.name);
+    await startTransfer(sourceTab, destTab, entry, destPath);
+  }
+
+  async function startTransfer(sourceTab, destTab, entry, destPath) {
+    const item = {
+      id: '', name: entry.name, status: 'starting', progress: '0%', size: formatBytes(entry.size || 0),
+      source: sourceTab.path, arrow: '->', dest: destTab.path, speed: '', left: '', elapsed: '0s',
+      started: Date.now(), done: 0, total: entry.isDir ? 0 : Number(entry.size || 0), destTabId: destTab.id
+    };
+    state.transfers.unshift(item); renderTransfers();
+    const payload = {
+      sourceKind: sourceTab.kind,
+      destKind: destTab.kind,
+      sourceSessionId: sourceTab.kind === 'remote' ? sourceTab.sessionId : '',
+      destSessionId: destTab.kind === 'remote' ? destTab.sessionId : '',
+      sourcePath: entry.path,
+      destPath,
+      name: entry.name
+    };
+    try {
+      const task = await api('/api/transfer/start', { method: 'POST', body: JSON.stringify(payload) });
+      item.id = task.id;
+      item.status = 'running';
+      pollTransfer(item);
+      setStatus(t('transferStarted', { name: entry.name }));
+    } catch (error) {
+      item.status = 'failed'; item.progress = '0%'; fail(error); renderTransfers();
+    }
+  }
+
+  async function pollTransfer(item) {
+    while (item.id && (item.status === 'running' || item.status === 'starting' || item.status === 'canceling')) {
+      try {
+        const data = await api('/api/transfer/status?id=' + encodeURIComponent(item.id), { method: 'GET' });
+        const elapsed = Math.max(1, data.elapsed || Math.round((Date.now() - item.started) / 1000));
+        item.status = statusLabel(data.status);
+        item.done = data.done || 0;
+        item.total = data.total || item.total || 0;
+        item.size = item.total ? `${formatBytes(item.done)} / ${formatBytes(item.total)}` : formatBytes(item.done);
+        const percent = item.total > 0 ? Math.min(100, Math.floor(item.done * 100 / item.total)) : (data.finished ? 100 : 0);
+        item.progress = percent + '%';
+        const speed = item.done > 0 ? item.done / elapsed : 0;
+        item.speed = speed ? formatBytes(speed) + '/s' : '';
+        item.left = speed && item.total > item.done ? Math.ceil((item.total - item.done) / speed) + 's' : '';
+        item.elapsed = elapsed + 's';
+        if (data.error) item.error = data.error;
+        renderTransfers();
+        if (data.finished) {
+          if (item.status === 'done') refreshTransferTarget(item);
+          break;
+        }
+      } catch (error) {
+        item.status = 'failed'; item.error = error.message; renderTransfers(); break;
+      }
+      await sleep(350);
+    }
+    setStatus(t('ready'));
+  }
+
+  function refreshTransferTarget(item) {
+    const tab = state.tabs.find(t => t.id === item.destTabId);
+    if (!tab) return;
+    setTimeout(() => {
+      const current = state.tabs.find(t => t.id === item.destTabId);
+      if (!current || current.loading) return;
+      loadTab(current, current.path, { skipHistory: true });
+    }, 300);
+  }
+
+  async function cancelTransfer(id) {
+    if (!id) return;
+    const item = state.transfers.find(t => t.id === id);
+    if (item) item.status = 'canceling';
+    renderTransfers();
+    try { await api('/api/transfer/cancel', { method: 'POST', body: JSON.stringify({ id }) }); }
+    catch (error) { fail(error); }
+  }
+
+  function statusLabel(status) {
+    if (status === 'done') return 'done';
+    if (status === 'failed') return 'failed';
+    if (status === 'canceled') return 'canceled';
+    if (status === 'canceling') return 'canceling';
+    return 'running';
+  }
+  function translatedTransferStatus(status) {
+    return t({ done:'statusDone', failed:'statusFailed', canceled:'statusCanceled', canceling:'statusCanceling', running:'statusRunning', starting:'statusRunning' }[status] || 'statusRunning');
+  }
+
+  function renderTransfers() {
+    const sourceRows = state.transfers.length ? state.transfers.map(item => `
+      <tr>
+        <td>${escapeHTML(item.name)}</td><td>${escapeHTML(translatedTransferStatus(item.status))}</td><td>${escapeHTML(item.progress)}</td><td>${escapeHTML(item.size)}</td>
+        <td>${escapeHTML(item.source)}</td>
+      </tr>`).join('') : '<tr><td colspan="5"></td></tr>';
+    const destRows = state.transfers.length ? state.transfers.map(item => `
+      <tr>
+        <td>${escapeHTML(item.dest)}</td><td>${escapeHTML(item.speed)}</td><td>${escapeHTML(item.left)}</td><td>${escapeHTML(item.elapsed)}</td>
+        <td>${item.id && ['running','starting'].includes(item.status) ? `<button class="cancel-transfer" data-id="${escapeAttr(item.id)}">${escapeHTML(t('cancel'))}</button>` : (item.status === 'canceling' ? escapeHTML(t('statusCanceling')) : '')}</td>
+      </tr>`).join('') : '<tr><td colspan="5"></td></tr>';
+    qs('#transferView').innerHTML = `
+      <div class="transfer-sides">
+        <div class="transfer-side transfer-source">${resizableTableHTML('transfers-source', [t('nameHeader'),t('statusHeader'),t('progressHeader'),t('sizeHeader'),t('sourcePathHeader')], sourceRows)}</div>
+        <div class="transfer-side transfer-destination">${resizableTableHTML('transfers-dest', [t('destinationPathHeader'),t('speedHeader'),t('etaHeader'),t('elapsedHeader'),''], destRows)}</div>
+      </div>`;
+    qs('#transferView').querySelectorAll('table').forEach(table => bindColumnResizers(table));
+    bindSmartScrollbar(qs('#transferView'));
+    qs('#transferView').querySelectorAll('.transfer-side').forEach(side => bindSmartScrollbar(side));
+    qs('#transferView').querySelectorAll('.cancel-transfer').forEach(btn => btn.addEventListener('click', () => cancelTransfer(btn.dataset.id)));
+  }
+
+  function openFileMenu(tab, side, x, y) {
+    const entry = selected(tab);
+    const hasEntry = !!entry;
+    const pasteDisabled = !state.clipboard;
+    const items = [
+      { action: 'transfer', label: t('transfer'), disabled: !hasEntry || !activeTabForSide(otherSide(side)) },
+      { action: 'open', label: t('open'), disabled: !hasEntry },
+      { action: 'edit', label: t('edit'), disabled: !hasEntry || entry?.isDir },
+      { sep: true },
+      { action: 'copy', label: t('copy'), disabled: !hasEntry },
+      { action: 'paste', label: t('paste'), disabled: pasteDisabled },
+      { action: 'copyPath', label: t('copyPath'), disabled: !hasEntry },
+      { sep: true },
+      { action: 'rename', label: t('rename'), disabled: !hasEntry },
+      { action: 'delete', label: t('delete'), disabled: !hasEntry || !!entry?.isDir },
+      { action: 'chmod', label: t('chmod'), disabled: !hasEntry },
+      { sep: true },
+      { action: 'toggleHidden', label: t('showHidden'), checked: state.showHidden }
+    ];
+    els.fileMenu.innerHTML = items.map(item => item.sep ? '<div class="menu-separator"></div>' : `<button type="button" data-action="${item.action}" ${item.disabled ? 'disabled' : ''}><span>${item.label}</span>${item.checked ? '<span class="menu-check">✓</span>' : ''}</button>`).join('');
+    els.fileMenu.style.left = Math.min(x, window.innerWidth - 210) + 'px';
+    els.fileMenu.style.top = Math.min(y, window.innerHeight - 390) + 'px';
+    els.fileMenu.classList.add('open');
+    els.fileMenu.querySelectorAll('button:not(:disabled)').forEach(button => button.addEventListener('click', () => runFileMenuAction(tab, side, button.dataset.action)));
+  }
+
+  async function runFileMenuAction(tab, side, action) {
+    closeFileMenu();
+    if (action === 'toggleHidden') { state.showHidden = !state.showHidden; renderPanes(); return; }
+    if (action === 'paste') { await pasteClipboard(tab); return; }
+    const entry = selected(tab);
+    if (!entry) return;
+    try {
+      if (action === 'transfer') await transferSelected(side);
+      if (action === 'open') await openEntry(tab, entry);
+      if (action === 'edit') await editEntry(tab, entry);
+      if (action === 'copy') copyEntry(tab, entry);
+      if (action === 'copyPath') await copyPath(entry.path);
+      if (action === 'rename') await renameEntry(tab, entry);
+      if (action === 'delete') await deleteEntry(tab, entry);
+      if (action === 'chmod') await chmodEntry(tab, entry);
+    } catch (error) { fail(error); }
+  }
+
+  function copyEntry(tab, entry) {
+    state.clipboard = { tabId: tab.id, kind: tab.kind, sessionId: tab.sessionId || '', path: entry.path, name: entry.name, isDir: entry.isDir };
+    setStatus(t('copied', { name: entry.name }));
+  }
+
+  async function pasteClipboard(destTab) {
+    const clip = state.clipboard;
+    if (!clip) return setStatus(t('nothingToPaste'));
+    const destPath = destTab.kind === 'local' ? joinLocal(destTab.path, clip.name) : joinRemote(destTab.path || '/', clip.name);
+    const fakeSource = { kind: clip.kind, sessionId: clip.sessionId || '', path: '', title: '', entries: [], selected: null };
+    const fakeEntry = { name: clip.name, path: clip.path, isDir: clip.isDir, size: 0 };
+    await startTransfer(fakeSource, destTab, fakeEntry, destPath);
+  }
+
+  async function openEntry(tab, entry) {
+    if (entry.isDir) return loadTab(tab, entry.path);
+    if (tab.kind === 'local') await api('/api/local-open', { method: 'POST', body: JSON.stringify({ path: entry.path }) });
+    else await api('/api/remote-open', { method: 'POST', body: JSON.stringify({ sessionId: tab.sessionId, path: entry.path }) });
+    setStatus(t('opened', { name: entry.name }));
+  }
+
+  async function editEntry(tab, entry) {
+    if (tab.kind === 'local') await api('/api/local-edit', { method: 'POST', body: JSON.stringify({ path: entry.path }) });
+    else await api('/api/remote-edit', { method: 'POST', body: JSON.stringify({ sessionId: tab.sessionId, path: entry.path }) });
+    setStatus(t('editing', { name: entry.name }));
+  }
+
+  async function renameEntry(tab, entry) {
+    const nextName = prompt(t('renamePrompt'), entry.name);
+    if (!nextName || nextName === entry.name) return;
+    const newPath = tab.kind === 'local' ? joinLocal(tab.path, nextName) : joinRemote(tab.path || '/', nextName);
+    if (tab.kind === 'local') await api('/api/local-rename', { method: 'POST', body: JSON.stringify({ oldPath: entry.path, newPath }) });
+    else await api('/api/remote-rename', { method: 'POST', body: JSON.stringify({ sessionId: tab.sessionId, oldPath: entry.path, newPath }) });
+    await loadTab(tab, tab.path, { skipHistory: true });
+  }
+
+  async function deleteEntry(tab, entry) {
+    if (!confirm(t('deleteConfirm', { name: entry.name }))) return;
+    if (tab.kind === 'local') await api('/api/local-delete', { method: 'POST', body: JSON.stringify({ path: entry.path }) });
+    else await api('/api/remote-delete', { method: 'POST', body: JSON.stringify({ sessionId: tab.sessionId, path: entry.path }) });
+    await loadTab(tab, tab.path, { skipHistory: true });
+  }
+
+  async function chmodEntry(tab, entry) {
+    const mode = prompt(t('modePrompt'), '');
+    if (!mode) return;
+    if (tab.kind === 'local') await api('/api/local-chmod', { method: 'POST', body: JSON.stringify({ path: entry.path, mode }) });
+    else await api('/api/remote-chmod', { method: 'POST', body: JSON.stringify({ sessionId: tab.sessionId, path: entry.path, mode }) });
+    await loadTab(tab, tab.path, { skipHistory: true });
+  }
+
+  async function copyPath(pathText) {
+    try { await navigator.clipboard.writeText(pathText); setStatus(t('pathCopied')); }
+    catch { prompt(t('copyPathPrompt'), pathText); }
+  }
+
+  function openBottomMenu(x, y) {
+    els.fileMenu.innerHTML = `<button type="button" data-action="clean"><span>${escapeHTML(t('clear'))}</span></button>`;
+    els.fileMenu.style.left = Math.min(x, window.innerWidth - 160) + 'px';
+    els.fileMenu.style.top = Math.min(y, window.innerHeight - 80) + 'px';
+    els.fileMenu.classList.add('open');
+    els.fileMenu.querySelector('button').addEventListener('click', () => { closeFileMenu(); state.transfers = []; renderTransfers(); });
+  }
+
+  function openTopbarMenu(x, y) {
+    const side = menuSideFromX(x);
+    const localButton = `<button type="button" data-menu="local">${escapeHTML(t('newLocal'))}</button>`;
+    const accountButtons = state.accounts.map((account, index) => `<button type="button" data-menu="account" data-index="${index}">${escapeHTML(accountLabel(account))}</button>`).join('');
+    els.topbarMenu.innerHTML = localButton + accountButtons;
+    els.topbarMenu.style.left = Math.min(x, window.innerWidth - 220) + 'px';
+    els.topbarMenu.style.top = Math.min(y, window.innerHeight - 180) + 'px';
+    els.topbarMenu.classList.add('open');
+    els.topbarMenu.querySelectorAll('button').forEach(button => {
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        if (button.dataset.menu === 'local') addLocalTab(side);
+        else {
+          const account = state.accounts[Number(button.dataset.index)];
+          if (account) { fillAccount(account); closeTopbarMenu(); await connectRemote(side); }
+        }
+        closeTopbarMenu();
+      });
+    });
+  }
+
+  function closeTopbarMenu() { els.topbarMenu.classList.remove('open'); }
+  function closeFileMenu() { els.fileMenu.classList.remove('open'); }
+  function clearTabDropMarkers() {
+    [els.leftTabs, els.rightTabs].forEach(zone => zone.classList.remove('drop-ready'));
+    document.querySelectorAll('.tab.dragging, .tab.drop-before, .tab.drop-after').forEach(tab => tab.classList.remove('dragging','drop-before','drop-after'));
+  }
+  function markTabDropPosition(tab, event) { tab.classList.add(isDropAfter(tab, event) ? 'drop-after' : 'drop-before'); }
+  function isDropAfter(tab, event) { const rect = tab.getBoundingClientRect(); return event.clientX > rect.left + rect.width / 2; }
+  function menuSideFromX(x) { const divider = qs('.tab-divider').getBoundingClientRect(); return x < divider.left ? 'left' : 'right'; }
+  function normalizeSide(side) { return side === 'right' ? 'right' : 'left'; }
+
+  function bindSmartScrollbars(root = document) {
+    root.querySelectorAll('aside, .tabs, .accounts, .file-list, .bottom-table').forEach(bindSmartScrollbar);
+  }
+
+  function bindSmartScrollbar(element) {
+    if (!element || smartScrollbarBound.has(element)) return;
+    smartScrollbarBound.add(element);
+    const edgeSize = 14;
+    element.addEventListener('mousemove', event => {
+      const rect = element.getBoundingClientRect();
+      const canScrollY = element.scrollHeight > element.clientHeight + 1;
+      const canScrollX = element.scrollWidth > element.clientWidth + 1;
+      const nearRightEdge = canScrollY && event.clientX >= rect.right - edgeSize;
+      const nearBottomEdge = canScrollX && event.clientY >= rect.bottom - edgeSize;
+      element.classList.toggle('scrollbar-hot', nearRightEdge || nearBottomEdge);
+    });
+    element.addEventListener('mouseleave', () => element.classList.remove('scrollbar-hot'));
+  }
+
+  function entrySortState(tab) {
+    const validKeys = new Set(['name', 'size', 'type', 'modified', 'mode']);
+    const key = validKeys.has(tab.entrySort?.key) ? tab.entrySort.key : 'name';
+    const direction = tab.entrySort?.direction === 'desc' ? 'desc' : 'asc';
+    return { key, direction };
+  }
+
+  function compareEntryText(left, right) {
+    return String(left ?? '').localeCompare(String(right ?? ''), undefined, {
+      numeric: true,
+      sensitivity: 'base'
+    });
+  }
+
+  function entryModifiedTime(value) {
+    const text = String(value || '').trim();
+    const match = text.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})$/);
+    if (match) {
+      return new Date(
+        Number(match[1]), Number(match[2]) - 1, Number(match[3]),
+        Number(match[4]), Number(match[5])
+      ).getTime();
+    }
+    const parsed = Date.parse(text);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+
+  function compareEntryField(left, right, key) {
+    if (key === 'size') return Number(left.size || 0) - Number(right.size || 0);
+    if (key === 'modified') return entryModifiedTime(left.modified) - entryModifiedTime(right.modified);
+    return compareEntryText(left[key], right[key]);
+  }
+
+  function visibleEntries(tab) {
+    const { key, direction } = entrySortState(tab);
+    const items = (tab.entries || [])
+      .map((entry, index) => ({entry, index}))
+      .filter(item => state.showHidden || !isHiddenEntry(item.entry));
+    items.sort((leftItem, rightItem) => {
+      const left = leftItem.entry;
+      const right = rightItem.entry;
+      // Keep folders above files in both ascending and descending order.
+      if (!!left.isDir !== !!right.isDir) return left.isDir ? -1 : 1;
+      const compared = compareEntryField(left, right, key);
+      if (compared !== 0) return direction === 'desc' ? -compared : compared;
+      return compareEntryText(left.name, right.name);
+    });
+    return items;
+  }
+  function isHiddenEntry(entry) { return !!entry.hidden || String(entry.name || '').startsWith('.'); }
+  function updateStatsForTab(tab) {
+    const entries = visibleEntries(tab).map(item => item.entry);
+    els.objectCount.textContent = t('objects', { count: entries.length });
+    els.totalSize.textContent = formatBytes(entries.reduce((sum, entry) => sum + (entry.isDir ? 0 : entry.size), 0));
+    setStatus(tab.path || tab.title || t('ready'));
+  }
+
+  function tableHTML(tableId, headers, rows) {
+    if (!rows.length) rows = [['', '', '', '', '', '', '', '', '', ''].slice(0, headers.length)];
+    return resizableTableHTML(tableId, headers, rows.map(row => `<tr>${row.map(cell => `<td>${escapeHTML(String(cell || ''))}</td>`).join('')}</tr>`).join(''));
+  }
+  function resizableTableHTML(tableId, headers, rows, classes = []) {
+    const widths = getColumnWidths(tableId, headers.length);
+    const totalWidth = widths.reduce((sum, width) => sum + width, 0);
+    return `<table class="resizable-table" data-table-id="${escapeAttr(tableId)}" style="width:${totalWidth}px;min-width:${totalWidth}px"><colgroup>${widths.map(width => `<col style="width:${width}px">`).join('')}</colgroup><thead><tr>${headers.map((h, i) => `<th class="${classes[i] || ''}" data-col-index="${i}">${escapeHTML(h)}${i < headers.length - 1 ? `<span class="col-resizer" data-col-index="${i}"></span>` : ''}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  function getColumnWidths(tableId, count) {
+    const key = tableId;
+    const defaultsMap = {
+      'transfers-source': [150,90,90,150,280],
+      'transfers-dest': [300,100,120,110,80],
+      'transfers': [150,90,90,150,230,60,230,100,120,110,80]
+    };
+    const defaults = defaultsMap[key] || [240,100,110,160,130];
+    const saved = state.columnWidths[key] || [];
+    return Array.from({ length: count }, (_, index) => Math.max(48, Number(saved[index] || defaults[index] || 120)));
+  }
+  function bindColumnResizers(table) {
+    if (!table) return;
+    table.querySelectorAll('.col-resizer').forEach(handle => {
+      handle.addEventListener('mousedown', event => {
+        event.preventDefault(); event.stopPropagation();
+        const tableId = table.dataset.tableId;
+        const index = Number(handle.dataset.colIndex);
+        const cols = [...table.querySelectorAll('col')];
+        const col = cols[index];
+        if (!col) return;
+        const minWidth = 48;
+        const startX = event.clientX;
+        const startWidths = cols.map(item => Math.round(item.getBoundingClientRect().width));
+        cols.forEach((item, colIndex) => { item.style.width = startWidths[colIndex] + 'px'; });
+        const startWidth = startWidths[index];
+        const startTotalWidth = startWidths.reduce((sum, width) => sum + width, 0);
+        table.style.width = startTotalWidth + 'px'; table.style.minWidth = startTotalWidth + 'px';
+        document.body.classList.add('resizing-columns');
+        const onMove = moveEvent => {
+          // Match Windows File Explorer details view: dragging a divider only
+          // changes the column on its left. Every column to the right keeps its
+          // own width and is shifted horizontally; the table grows or shrinks.
+          const rawDelta = Math.round(moveEvent.clientX - startX);
+          const delta = Math.max(minWidth - startWidth, rawDelta);
+          const newWidth = startWidth + delta;
+          const newTotalWidth = startTotalWidth + delta;
+          col.style.width = newWidth + 'px';
+          table.style.width = newTotalWidth + 'px'; table.style.minWidth = newTotalWidth + 'px';
+        };
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
+          document.body.classList.remove('resizing-columns');
+          state.columnWidths[tableId] = cols.map(item => Math.round(parseFloat(item.style.width) || item.getBoundingClientRect().width));
+          saveColumnWidths();
+        };
+        document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+      });
+    });
+  }
+
+  function loadPaneSplit() {
+    localStorage.removeItem(paneSplitKey);
+    setPaneSplit(0.5, false);
+  }
+  function setPaneSplit(value, save = true) {
+    const ratio = Math.max(0.22, Math.min(0.78, Number(value) || 0.5));
+    state.paneSplit = ratio;
+    document.documentElement.style.setProperty('--pane-split', (ratio * 100).toFixed(2) + '%');
+    if (save) localStorage.setItem(paneSplitKey, String(ratio));
+  }
+  function bindPaneSplitters() {
+    [qs('#paneSplitter'), qs('#transferSplitterGuide'), qs('.tab-divider')].filter(Boolean).forEach(handle => {
+      handle.addEventListener('mousedown', event => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        const workspace = qs('.workspace');
+        if (!workspace) return;
+        document.body.classList.add('resizing-panes');
+        const onMove = moveEvent => {
+          const rect = workspace.getBoundingClientRect();
+          if (rect.width <= 0) return;
+          setPaneSplit((moveEvent.clientX - rect.left) / rect.width, false);
+        };
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.body.classList.remove('resizing-panes');
+          setPaneSplit(state.paneSplit, true);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    });
+  }
+
+  function loadColumnWidths() { try { state.columnWidths = JSON.parse(localStorage.getItem(columnWidthsKey) || '{}'); } catch { state.columnWidths = {}; } }
+  function saveColumnWidths() { localStorage.setItem(columnWidthsKey, JSON.stringify(state.columnWidths)); }
+
+  function loadTabLayout() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(tabLayoutKey) || '{}');
+      if (saved.localSide && state.tabs[0]) state.tabs[0].side = normalizeSide(saved.localSide);
+      if (saved.activeSideTabIds) state.activeSideTabIds = {...state.activeSideTabIds, ...saved.activeSideTabIds};
+      state.activePaneSide = normalizeSide(saved.activePaneSide || state.activePaneSide);
+    } catch {}
+    ensureActiveSideTabs();
+  }
+  function saveTabLayout() {
+    localStorage.setItem(tabLayoutKey, JSON.stringify({
+      localSide: state.tabs.find(t => t.id === 'local-1')?.side || 'left',
+      activeSideTabIds: state.activeSideTabIds,
+      activePaneSide: state.activePaneSide
+    }));
+  }
+
+  function loadAccounts() {
+    try { state.accounts = JSON.parse(localStorage.getItem(accountsKey) || '[]'); } catch { state.accounts = []; }
+    loadAccountsFromServer();
+  }
+  async function loadAccountsFromServer() {
+    const localAccounts = Array.isArray(state.accounts) ? state.accounts : [];
+    try {
+      const accounts = await api('/accounts');
+      state.accounts = Array.isArray(accounts) ? accounts : [];
+      if (state.accounts.length === 0 && localAccounts.length > 0) { state.accounts = localAccounts; await persistAccounts(); }
+      else localStorage.setItem(accountsKey, JSON.stringify(state.accounts));
+    } catch { state.accounts = localAccounts; }
+    renderAccountSelect();
+  }
+  async function persistAccounts() {
+    state.accounts.sort((a,b) => accountLabel(a).localeCompare(accountLabel(b), 'zh-Hans-CN'));
+    localStorage.setItem(accountsKey, JSON.stringify(state.accounts));
+    try { await api('/accounts', { method: 'POST', body: JSON.stringify(state.accounts) }); } catch {}
+  }
+  function renderAccountSelect() {
+    els.accountSelect.innerHTML = `<option value="">${escapeHTML(t('selectSavedAccount'))}</option>` + state.accounts.map((account, index) => `<option value="${index}">${escapeHTML(accountLabel(account))}</option>`).join('');
+  }
+  function formAccount() {
+    return { name: qs('#remoteName').value.trim(), host: qs('#remoteHost').value.trim(), port: qs('#remotePort').value.trim() || '22', username: qs('#remoteUser').value.trim(), password: qs('#remotePass').value };
+  }
+  function fillAccount(account) {
+    qs('#remoteName').value = account.name || ''; qs('#remoteHost').value = account.host || ''; qs('#remotePort').value = account.port || '22'; qs('#remoteUser').value = account.username || ''; qs('#remotePass').value = account.password || '';
+  }
+  function fillSelectedAccount() { const index = Number(els.accountSelect.value); if (Number.isInteger(index) && state.accounts[index]) fillAccount(state.accounts[index]); }
+  function saveAccount() {
+    const account = formAccount();
+    if (!account.host || !account.username) return setStatus(t('hostUserRequired'));
+    const key = accountKey(account);
+    const index = state.accounts.findIndex(item => accountKey(item) === key);
+    if (index >= 0) state.accounts[index] = account; else state.accounts.push(account);
+    persistAccounts(); renderAccountSelect(); setStatus(t('savedNotConnected'));
+  }
+  function deleteAccount() {
+    const index = Number(els.accountSelect.value);
+    if (!Number.isInteger(index) || !state.accounts[index]) return setStatus(t('selectAccount'));
+    state.accounts.splice(index, 1); persistAccounts(); renderAccountSelect(); setStatus(t('accountDeleted'));
+  }
+  function loadSavedLogin() { try { fillAccount(JSON.parse(localStorage.getItem(lastLoginKey) || '{}')); } catch {} }
+  function accountKey(account) { return [account.name, account.host, account.port || '22', account.username].join('|').toLowerCase(); }
+  function accountLabel(account) { return account.name || `${account.username || 'user'}@${account.host || 'host'}:${account.port || '22'}`; }
+
+  async function api(path, options = {}) {
+    const headers = {'Content-Type':'application/json', ...(options.headers || {})};
+    if (pageToken) headers.Authorization = 'Bearer ' + pageToken;
+    const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : 20000;
+    const fetchOptions = {...options, headers};
+    delete fetchOptions.timeoutMs;
+    let timer = null;
+    if (!fetchOptions.signal && timeoutMs > 0) {
+      const controller = new AbortController();
+      fetchOptions.signal = controller.signal;
+      timer = setTimeout(() => controller.abort(), timeoutMs);
+    }
+    try {
+      const response = await fetch(path, fetchOptions);
+      if (!response.ok) throw new Error(await response.text());
+      return response.json();
+    } catch (error) {
+      if (error.name === 'AbortError') throw new Error(t('requestTimedOut'));
+      throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  function addLog(text) { state.logs.unshift({ time: new Date().toLocaleTimeString(), text }); }
+  function fail(error) { setStatus(error.message || String(error)); addLog(error.message || String(error)); }
+  function setStatus(text) { els.statusText.textContent = text; }
+  function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+  function sameDirectory(a,b) { return String(a||'').replace(/[\\/]+$/,'') === String(b||'').replace(/[\\/]+$/,''); }
+  function localTabTitle(path) { const text = String(path || '').replace(/[\\/]+$/,''); const name = text.split(/[\\/]/).filter(Boolean).pop(); return name ? t('localNamed', { name }) : t('local'); }
+  function joinRemote(base, name) { if (!base || base === '/') return '/' + name; return base.replace(/\/+$/, '') + '/' + name; }
+  function joinLocal(base, name) { const sep = String(base || '').includes('\\') ? '\\' : '/'; return String(base || '').replace(/[\\/]+$/, '') + sep + name; }
+  function formatBytes(bytes) { if (!bytes) return '0B'; const units = ['B','KB','MB','GB','TB']; let value = Number(bytes); let index = 0; while (value >= 1024 && index < units.length - 1) { value /= 1024; index++; } return (index === 0 ? value.toFixed(0) : value.toFixed(value >= 10 ? 1 : 2)) + units[index]; }
+  function escapeHTML(value) { return String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
+  function escapeAttr(value) { return escapeHTML(value).replace(/`/g, '&#96;'); }
+  </script>
+</body>
+</html>

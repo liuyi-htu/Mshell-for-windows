@@ -1,0 +1,1542 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mshell</title>
+  <link rel="stylesheet" href="vendor/xterm.css">
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: #0f1318;
+      color: #e8edf2;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+    }
+    body {
+      display: grid;
+      grid-template-rows: 25px 1fr;
+      grid-template-columns: minmax(280px, 25vw) minmax(0, 1fr);
+      background: #0f1318;
+    }
+    body.sidebar-collapsed {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    body.sidebar-collapsed aside {
+      display: none;
+    }
+    .app-titlebar {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: auto minmax(120px, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      height: 25px;
+      min-width: 0;
+      border-bottom: 1px solid #cfd5dc;
+      background: #edf2f6;
+      color: #68717a;
+      user-select: none;
+    }
+    .titlebar-left,
+    .titlebar-right {
+      display: inline-flex;
+      align-items: center;
+      min-width: 0;
+      height: 100%;
+    }
+    .titlebar-left {
+      gap: 8px;
+      padding-left: 9px;
+    }
+    .titlebar-right {
+      justify-content: flex-end;
+      gap: 10px;
+    }
+    button {
+      font: inherit;
+      cursor: pointer;
+    }
+    .titlebar-icon,
+    .window-button {
+      border: 0;
+      background: transparent;
+      color: inherit;
+      line-height: 1;
+    }
+    .titlebar-icon {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 24px;
+      padding: 0;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      color: #5f6973;
+      font-size: 0;
+    }
+    .titlebar-icon::before {
+      content: "";
+      width: 17px;
+      height: 14px;
+      border: 1.6px solid currentColor;
+      border-radius: 4px;
+      background: linear-gradient(90deg, currentColor 0 4px, transparent 4px 100%);
+      opacity: .95;
+    }
+    .titlebar-icon::after {
+      content: "";
+      position: absolute;
+      left: 17px;
+      top: 8px;
+      width: 6px;
+      height: 1.6px;
+      border-radius: 999px;
+      background: currentColor;
+      box-shadow: 0 4px 0 currentColor;
+      opacity: .85;
+    }
+    .titlebar-icon:hover {
+      background: #dce4eb;
+      color: #20262d;
+    }
+    .tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      height: 100%;
+      overflow-x: auto;
+      padding: 3px 0;
+    }
+    .tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 220px;
+      height: 26px;
+      padding: 0 8px 0 10px;
+      border: 1px solid #d2dae2;
+      border-radius: 5px;
+      background: transparent;
+      color: #5c6670;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .tab.dragging {
+      opacity: .55;
+    }
+    .tab.drop-before {
+      box-shadow: inset 3px 0 0 #4f86c6;
+    }
+    .tab.drop-after {
+      box-shadow: inset -3px 0 0 #4f86c6;
+    }
+    .tab.active {
+      border-color: #b8c4cf;
+      background: #ffffff;
+      color: #1f2933;
+    }
+    .tab-title {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tab-status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #8b949e;
+      flex: 0 0 auto;
+    }
+    .tab-status-text {
+      font-size: 12px;
+      color: #8b949e;
+      flex: 0 0 auto;
+    }
+    .tab.connected .tab-status-dot {
+      background: #23b26d;
+    }
+    .tab.connected .tab-status-text {
+      color: #178a54;
+    }
+    .tab.disconnected .tab-status-dot,
+    .tab.error .tab-status-dot {
+      background: #d94c4c;
+    }
+    .tab.disconnected .tab-status-text,
+    .tab.error .tab-status-text {
+      color: #c43f3f;
+    }
+    .tab-refresh {
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: #4f86c6;
+      line-height: 1;
+      font-size: 15px;
+    }
+    .tab-refresh:hover {
+      background: #dce9f7;
+    }
+    .tab-close {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: inherit;
+      line-height: 1;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      color: #68717a;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #c45f5f;
+    }
+    .dot.ready {
+      background: #35b779;
+    }
+    .window-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 0;
+      height: 25px;
+      padding: 0;
+    }
+    .window-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 52px;
+      height: 25px;
+      padding: 0;
+      border-radius: 0;
+      font-size: 22px;
+      font-weight: 650;
+      line-height: 1;
+      transform: translateY(-1px);
+      color: #5d6670;
+    }
+    .window-button.minimize {
+      font-size: 26px;
+    }
+    .window-button.data {
+      width: 34px;
+      font-size: 17px;
+      font-weight: 700;
+    }
+    aside,
+    .accounts,
+    .tabs,
+    .terminal-area,
+    .xterm-viewport {
+      scrollbar-width: none;
+    }
+    aside::-webkit-scrollbar,
+    .accounts::-webkit-scrollbar,
+    .tabs::-webkit-scrollbar,
+    .terminal-area::-webkit-scrollbar,
+    .xterm-viewport::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+    }
+    .terminal-area.scrollbar-hover .xterm-viewport {
+      scrollbar-width: thin;
+    }
+    .terminal-area.scrollbar-hover .xterm-viewport::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    .terminal-area.scrollbar-hover .xterm-viewport::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: #5e6873;
+    }
+    .window-button:hover {
+      background: #dce4eb;
+      color: #20262d;
+    }
+    .window-button.close:hover {
+      background: #d94c4c;
+      color: #ffffff;
+    }
+    aside {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+      min-height: 0;
+      padding: 20px;
+      border-right: 1px solid #2c333d;
+      background: #181d23;
+      overflow: auto;
+    }
+    main {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1fr;
+      background: #0f1318;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.25;
+    }
+    .sidebar-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .language-toggle {
+      flex: 0 0 auto;
+      min-width: 62px;
+      height: 28px;
+      padding: 0 10px;
+      border: 1px solid #495564;
+      border-radius: 6px;
+      background: #222a33;
+      color: #e8edf2;
+      font-size: 12px;
+      line-height: 26px;
+      text-align: center;
+    }
+    .language-toggle:hover {
+      border-color: #6f8194;
+      background: #2a3541;
+    }
+    label {
+      display: grid;
+      gap: 8px;
+      color: #aeb8c4;
+      font-size: 14px;
+    }
+    input,
+    select,
+    .form button,
+    .accounts button {
+      width: 100%;
+      min-width: 0;
+      height: 42px;
+      border: 1px solid #34404c;
+      border-radius: 7px;
+      font: inherit;
+    }
+    input,
+    select {
+      padding: 0 12px;
+      background: #0f1318;
+      color: #e8edf2;
+    }
+    .form,
+    .panel-controls {
+      display: grid;
+      gap: 14px;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 112px;
+      gap: 12px;
+    }
+    .actions,
+    .accounts {
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+    .accounts {
+      flex: 0 0 auto;
+      min-height: max-content;
+    }
+    .form button,
+    .accounts button {
+      padding: 0 12px;
+      background: #243141;
+      color: #f4f7fa;
+    }
+    .form button.primary {
+      border-color: #2e6ea5;
+      background: #2872a8;
+    }
+    .accounts button.danger {
+      border-color: #724248;
+      background: #673941;
+    }
+    .accounts button.info {
+      border-color: #44596d;
+      background: #273b4d;
+    }
+    .about-overlay {
+      position: fixed;
+      inset: 25px 0 0;
+      z-index: 1000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 22px;
+      background: rgba(4, 8, 12, .74);
+    }
+    .about-overlay.open {
+      display: flex;
+    }
+    .about-dialog {
+      width: min(760px, 100%);
+      max-height: calc(100vh - 70px);
+      overflow: auto;
+      border: 1px solid #3b4652;
+      border-radius: 12px;
+      background: #171d24;
+      color: #e8edf2;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, .45);
+    }
+    .about-header {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 18px;
+      border-bottom: 1px solid #303a45;
+      background: #171d24;
+    }
+    .about-header h2,
+    .about-section h3 {
+      margin: 0;
+    }
+    .about-close {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid #45515e;
+      border-radius: 7px;
+      background: #242d37;
+      color: #f3f6f9;
+      font-size: 22px;
+      line-height: 1;
+    }
+    .about-content {
+      display: grid;
+      gap: 18px;
+      padding: 18px;
+    }
+    .about-section {
+      display: grid;
+      gap: 10px;
+    }
+    .about-section p {
+      margin: 0;
+      color: #bbc5cf;
+      line-height: 1.65;
+    }
+    .about-section a {
+      color: #72aee6;
+      overflow-wrap: anywhere;
+      text-decoration: none;
+    }
+    .about-section a:hover {
+      text-decoration: underline;
+    }
+    @media (max-width: 620px) {
+    }
+    .toolbar {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .font-button {
+      width: 38px;
+      height: 38px;
+      padding: 0;
+      border: 1px solid #34404c;
+      border-radius: 7px;
+      background: #243141;
+      color: #f4f7fa;
+      font-weight: 650;
+    }
+    .font-size {
+      min-width: 48px;
+      text-align: center;
+      color: #aeb8c4;
+      font-size: 14px;
+    }
+    .panel-control-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: #aeb8c4;
+      font-size: 14px;
+    }
+    .terminal-area {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      padding: 10px;
+    }
+    .terminal-pane {
+      display: none;
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+    }
+    .terminal-pane.active {
+      display: block;
+    }
+    .context-menu {
+      position: fixed;
+      z-index: 1000;
+      display: none;
+      min-width: 150px;
+      padding: 6px;
+      border: 1px solid #303a45;
+      border-radius: 8px;
+      background: #1b222b;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.38);
+    }
+    .context-menu.open {
+      display: grid;
+      gap: 2px;
+    }
+    .context-menu button {
+      height: 32px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #e8edf2;
+      text-align: left;
+      font: inherit;
+    }
+    .context-menu button:hover {
+      background: #263240;
+    }
+    .xterm {
+      height: 100%;
+    }
+    .xterm-viewport {
+      padding-bottom: 56px;
+    }
+    @media (max-width: 760px) {
+      body {
+        grid-template-columns: 1fr;
+        grid-template-rows: 25px auto 1fr;
+      }
+      body:not(.sidebar-collapsed) main {
+        min-height: 56vh;
+      }
+      aside {
+        border-right: 0;
+        border-bottom: 1px solid #2c333d;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-titlebar">
+    <div class="titlebar-left">
+      <button id="sidebarToggle" class="titlebar-icon" data-i18n-title="toggleSidebar" data-i18n-aria-label="toggleSidebar"></button>
+    </div>
+    <nav id="tabs" class="tabs"></nav>
+    <div class="titlebar-right">
+      <div class="window-controls">
+        <button id="openMsftp" class="window-button data" data-i18n-title="openMsftp" data-i18n-aria-label="openMsftp">▣</button>
+        <button id="windowMinimize" class="window-button minimize" data-i18n-title="minimize" data-i18n-aria-label="minimize">-</button>
+        <button id="windowMaximize" class="window-button maximize" data-i18n-title="maximizeRestore" data-i18n-aria-label="maximizeRestore">□</button>
+        <button id="windowClose" class="window-button close" data-i18n-title="close" data-i18n-aria-label="close">×</button>
+      </div>
+    </div>
+  </header>
+
+  <aside>
+    <div class="sidebar-heading"><h1>Mshell</h1><button id="languageToggle" class="language-toggle" type="button">中文</button></div>
+    <section class="panel-controls">
+      <div class="panel-control-row">
+        <span data-i18n="terminalFont">Terminal font</span>
+        <div class="toolbar">
+          <button id="fontDown" class="font-button" data-i18n-title="decreaseFont">-</button>
+          <span id="fontSizeLabel" class="font-size">15px</span>
+          <button id="fontUp" class="font-button" data-i18n-title="increaseFont">+</button>
+        </div>
+      </div>
+    </section>
+    <section class="form">
+      <label>
+        <span data-i18n="account">Account</span>
+        <select id="accountSelect"></select>
+      </label>
+      <label>
+        <span data-i18n="name">Name</span>
+        <input id="name" autocomplete="off" data-i18n-placeholder="namePlaceholder" placeholder="Server name">
+      </label>
+      <div class="row">
+        <label>
+          IP
+          <input id="host" autocomplete="off" placeholder="192.168.1.10">
+        </label>
+        <label>
+          <span data-i18n="port">Port</span>
+          <input id="port" inputmode="numeric" value="22">
+        </label>
+      </div>
+      <label>
+        <span data-i18n="username">Username</span>
+        <input id="username" autocomplete="username">
+      </label>
+      <label>
+        <span data-i18n="password">Password</span>
+        <input id="password" type="password" autocomplete="current-password">
+      </label>
+      <div class="actions">
+        <button id="connectSSH" class="primary" data-i18n="connectSSH">Connect SSH</button>
+      </div>
+    </section>
+    <section class="accounts">
+      <button id="saveAccount" data-i18n="saveAccount">Save account</button>
+      <button id="deleteAccount" class="danger" data-i18n="deleteAccount">Delete account</button>
+      <button id="softwareInfo" class="info" type="button" data-i18n="softwareInfo">Software Information</button>
+    </section>
+  </aside>
+
+  <div id="aboutOverlay" class="about-overlay" role="dialog" aria-modal="true" aria-labelledby="aboutTitle" hidden>
+    <article class="about-dialog">
+      <header class="about-header">
+        <h2 id="aboutTitle" data-i18n="softwareInfo">Software Information</h2>
+        <button id="aboutClose" class="about-close" type="button" data-i18n-title="close" data-i18n-aria-label="close">×</button>
+      </header>
+      <div class="about-content">
+        <section class="about-section">
+          <h3 data-i18n="softwareFeatures">Features</h3>
+          <p data-i18n="softwareDescription">mshell is a lightweight Windows SSH terminal.</p>
+        </section>
+        <section class="about-section">
+          <h3 data-i18n="openSourceTitle">Open Source</h3>
+          <p data-i18n="openSourceDescription">mshell is free and open-source software. Anyone may use it free of charge.</p>
+          <p>
+            <span data-i18n="openSourceAddress">Source code:</span>
+            <a href="https://github.com/liuyi-htu/Mshell-for-windows" target="_blank" rel="noopener noreferrer">https://github.com/liuyi-htu/Mshell-for-windows</a>
+          </p>
+        </section>
+        <section class="about-section">
+          <h3 data-i18n="disclaimerTitle">Disclaimer</h3>
+          <p data-i18n="disclaimerText">This software is provided as-is.</p>
+        </section>
+</div>
+    </article>
+  </div>
+
+  <main>
+    <div id="terminalArea" class="terminal-area"></div>
+  </main>
+  <div id="contextMenu" class="context-menu">
+    <button id="contextPaste" type="button" data-i18n="paste">Paste</button>
+    <button id="contextCopy" type="button" data-i18n="copy">Copy</button>
+    <button id="contextClear" type="button" data-i18n="clear">Clear</button>
+  </div>
+
+  <div id="topbarAccountMenu" class="context-menu"></div>
+
+  <script src="vendor/xterm.js"></script>
+  <script src="vendor/addon-fit.js"></script>
+  <script>
+    const fields = {
+      accountSelect: document.getElementById('accountSelect'),
+      name: document.getElementById('name'),
+      host: document.getElementById('host'),
+      port: document.getElementById('port'),
+      username: document.getElementById('username'),
+      password: document.getElementById('password'),
+      sidebarToggle: document.getElementById('sidebarToggle'),
+      fontDown: document.getElementById('fontDown'),
+      fontUp: document.getElementById('fontUp'),
+      fontSizeLabel: document.getElementById('fontSizeLabel'),
+      tabs: document.getElementById('tabs'),
+      terminalArea: document.getElementById('terminalArea'),
+      contextMenu: document.getElementById('contextMenu'),
+      topbarAccountMenu: document.getElementById('topbarAccountMenu'),
+      languageToggle: document.getElementById('languageToggle'),
+      aboutOverlay: document.getElementById('aboutOverlay'),
+      softwareInfo: document.getElementById('softwareInfo'),
+      aboutClose: document.getElementById('aboutClose')
+    };
+    const languageKey = 'mshell-msftp.language.v1';
+    let currentLanguage = localStorage.getItem(languageKey) === 'zh' ? 'zh' : 'en';
+    const messages = {
+      en: {
+        toggleSidebar: 'Show or hide sidebar', openMsftp: 'Open msftp', minimize: 'Minimize', maximizeRestore: 'Maximize / Restore', close: 'Close',
+        terminalFont: 'Terminal font', decreaseFont: 'Decrease font size', increaseFont: 'Increase font size', account: 'Account', name: 'Name',
+        namePlaceholder: 'Server name', port: 'Port', username: 'Username', password: 'Password', connectSSH: 'Connect SSH', saveAccount: 'Save account',
+        deleteAccount: 'Delete account', softwareInfo: 'Software Information', softwareFeatures: 'Features',
+        softwareDescription: 'mshell is a lightweight Windows SSH terminal for daily server administration. It supports saved accounts, multiple terminal tabs, terminal font adjustment, clipboard operations, and opening msftp with the current server connection.',
+        openSourceTitle: 'Open Source', openSourceAddress: 'Source code:',
+        openSourceDescription: 'mshell is free and open-source software. Anyone may use it free of charge.',
+        disclaimerTitle: 'Disclaimer', disclaimerText: 'This software is provided as-is and is intended only for lawful server administration. Verify the target host, permissions, commands, and backups before use. The author is not responsible for data loss, service interruption, security incidents, or misuse.',
+
+        paste: 'Paste', copy: 'Copy', clear: 'Clear', selectSavedAccount: 'Select a saved account', selectAccount: 'Please select an account',
+        fillHostUser: 'Please enter the IP address and username', connecting: 'Connecting', connected: 'Connected', connectionError: 'Connection error', disconnected: 'Disconnected',
+        sshLoginFailed: 'SSH connection failed. Please check the login information.', disconnectMessage: '[Connection closed. Reconnect the SSH terminal.]',
+        reconnect: 'Reconnect', closeTerminal: 'Close terminal', noSavedAccounts: 'No saved accounts', hostUserRequired: 'Host and username are required',
+        replaceExistingAccount: 'Replace the existing account?', saveCanceled: 'Save canceled', accountSaved: 'Account saved', accountDeleted: 'Account deleted', notConnected: 'Not connected'
+      },
+      zh: {
+        toggleSidebar: '显示或隐藏左侧面板', openMsftp: '打开 msftp', minimize: '最小化', maximizeRestore: '最大化/还原', close: '关闭',
+        terminalFont: '终端字体', decreaseFont: '减小字体', increaseFont: '增大字体', account: '账号', name: '名称',
+        namePlaceholder: '服务器名称', port: '端口', username: '用户名', password: '密码', connectSSH: '连接 SSH', saveAccount: '保存账号',
+        deleteAccount: '删除账号', softwareInfo: '软件说明', softwareFeatures: '软件功能',
+        softwareDescription: 'mshell 是一款用于日常服务器管理的轻量级 Windows SSH 终端，支持保存账号、多终端标签、终端字体调整、复制粘贴，以及使用当前服务器连接打开 msftp。',
+        openSourceTitle: '开源说明', openSourceAddress: '开源地址：',
+        openSourceDescription: 'mshell 是一款开源、免费的软件，任何人都可以免费使用。',
+        disclaimerTitle: '使用声明', disclaimerText: '本软件按现状提供，仅限用于合法的服务器管理。使用前请确认目标主机、操作权限、执行命令和数据备份。因误操作、数据丢失、服务中断、安全事件或不当使用造成的后果由使用者自行承担。',
+
+        paste: '粘贴', copy: '复制', clear: '清屏', selectSavedAccount: '选择已保存账号', selectAccount: '请选择账号',
+        fillHostUser: '请填写 IP 和用户名', connecting: '正在连接', connected: '已连接', connectionError: '连接错误', disconnected: '已断开',
+        sshLoginFailed: 'SSH 连接失败，请检查登录信息是否正确。', disconnectMessage: '[连接已断开，请重新连接 SSH 终端]',
+        reconnect: '重新连接', closeTerminal: '关闭终端', noSavedAccounts: '暂无保存账号', hostUserRequired: '主机和用户名不能为空',
+        replaceExistingAccount: '是否替换已有账号？', saveCanceled: '已取消保存', accountSaved: '账号已保存', accountDeleted: '账号已删除', notConnected: '未连接'
+      }
+    };
+    function t(key) { return messages[currentLanguage]?.[key] ?? messages.en[key] ?? key; }
+    function applyLanguage() {
+      document.documentElement.lang = currentLanguage === 'zh' ? 'zh-CN' : 'en';
+      document.querySelectorAll('[data-i18n]').forEach(node => { node.textContent = t(node.dataset.i18n); });
+      document.querySelectorAll('[data-i18n-title]').forEach(node => { node.title = t(node.dataset.i18nTitle); });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(node => { node.placeholder = t(node.dataset.i18nPlaceholder); });
+      document.querySelectorAll('[data-i18n-aria-label]').forEach(node => { node.setAttribute('aria-label', t(node.dataset.i18nAriaLabel)); });
+      document.querySelectorAll('[data-i18n-alt]').forEach(node => { node.alt = t(node.dataset.i18nAlt); });
+      fields.languageToggle.textContent = currentLanguage === 'en' ? '中文' : 'English';
+      renderAccounts();
+      renderTabs();
+      updateHeader();
+    }
+    function toggleLanguage() {
+      currentLanguage = currentLanguage === 'en' ? 'zh' : 'en';
+      localStorage.setItem(languageKey, currentLanguage);
+      applyLanguage();
+    }
+    function openAbout() {
+      fields.aboutOverlay.hidden = false;
+      fields.aboutOverlay.classList.add('open');
+      fields.aboutClose.focus();
+    }
+    function closeAbout() {
+      fields.aboutOverlay.classList.remove('open');
+      fields.aboutOverlay.hidden = true;
+      fields.softwareInfo.focus();
+    }
+    const storeKey = 'go-web-shell.accounts.v1';
+    const sidebarKey = 'go-web-shell.sidebar-collapsed.v1';
+    const fontSizeKey = 'go-web-shell.font-size.v1';
+    const fontSizeDefaultKey = 'go-web-shell.font-size-default-15.v2';
+    const pageToken = new URLSearchParams(location.search).get('token') || '';
+    let accounts = loadAccounts();
+    let sessions = [];
+    let activeSessionId = '';
+    let sessionSeq = 0;
+    let draggedSessionId = '';
+
+    localStorage.setItem(sidebarKey, '1');
+    document.body.classList.add('sidebar-collapsed');
+    if (localStorage.getItem(fontSizeDefaultKey) !== '1') {
+      localStorage.setItem(fontSizeKey, '15');
+      localStorage.setItem(fontSizeDefaultKey, '1');
+    }
+
+    applyLanguage();
+    loadAccountsFromServer();
+    updateFontSizeLabel();
+    document.getElementById('connectSSH').addEventListener('click', createSSHSession);
+    document.getElementById('saveAccount').addEventListener('click', saveAccount);
+    document.getElementById('deleteAccount').addEventListener('click', deleteAccount);
+    fields.accountSelect.addEventListener('change', fillSelectedAccount);
+    fields.accountSelect.addEventListener('click', () => {
+      setTimeout(fillSelectedAccount, 0);
+    });
+    document.querySelector('aside').addEventListener('keydown', event => {
+      if (event.key !== 'Enter' || event.isComposing || event.target.tagName === 'BUTTON') {
+        return;
+      }
+      event.preventDefault();
+      createSSHSession();
+    });
+    fields.sidebarToggle.addEventListener('click', toggleSidebar);
+    fields.fontDown.addEventListener('click', () => changeFontSize(-1));
+    fields.fontUp.addEventListener('click', () => changeFontSize(1));
+    fields.languageToggle.addEventListener('click', toggleLanguage);
+    fields.softwareInfo.addEventListener('click', openAbout);
+    fields.aboutClose.addEventListener('click', closeAbout);
+    fields.aboutOverlay.addEventListener('click', event => { if (event.target === fields.aboutOverlay) closeAbout(); });
+    document.addEventListener('keydown', event => { if (event.key === 'Escape' && fields.aboutOverlay.classList.contains('open')) closeAbout(); });
+    document.querySelector('.app-titlebar').addEventListener('mousedown', event => {
+      if (event.button !== 0 || event.target.closest('button, input, select, .tab, .context-menu')) {
+        return;
+      }
+      if (window.windowDrag) {
+        window.windowDrag();
+      }
+    });
+    document.querySelector('.app-titlebar').addEventListener('contextmenu', openTopbarAccountMenu);
+    fields.tabs.addEventListener('mousedown', event => {
+      if (event.target.closest('.tab')) {
+        event.stopPropagation();
+      }
+    });
+    fields.tabs.addEventListener('pointerdown', event => {
+      if (event.target.closest('.tab')) {
+        event.stopPropagation();
+      }
+    });
+    fields.tabs.addEventListener('contextmenu', openTopbarAccountMenu);
+    fields.tabs.addEventListener('dragover', event => {
+      const id = draggedSessionId || event.dataTransfer?.getData('text/x-mshell-session') || event.dataTransfer?.getData('text/plain');
+      if (!id) return;
+      event.preventDefault();
+      if (!event.target.closest('.tab')) {
+        clearSessionDropMarkers();
+      }
+    });
+    fields.tabs.addEventListener('drop', event => {
+      const id = draggedSessionId || event.dataTransfer?.getData('text/x-mshell-session') || event.dataTransfer?.getData('text/plain');
+      if (!id || event.target.closest('.tab')) return;
+      event.preventDefault();
+      clearSessionDropMarkers();
+      moveSessionToIndex(id, sessions.length);
+    });
+    document.getElementById('windowMinimize').addEventListener('click', () => {
+      if (window.windowMinimize) {
+        window.windowMinimize();
+      }
+    });
+    document.getElementById('openMsftp').addEventListener('click', () => {
+      const session = activeSession();
+      const login = session && session.initMessage ? {
+        name: session.baseTitle || session.title || '',
+        host: session.initMessage.host || '',
+        port: session.initMessage.port || '22',
+        username: session.initMessage.username || '',
+        password: session.initMessage.password || ''
+      } : {};
+      if (window.openMsftpShortcut) {
+        window.openMsftpShortcut(JSON.stringify(login));
+      }
+    });
+    document.getElementById('windowMaximize').addEventListener('click', () => {
+      if (window.windowToggleMaximize) {
+        window.windowToggleMaximize();
+      }
+    });
+    document.getElementById('windowClose').addEventListener('click', () => {
+      if (window.windowClose) {
+        window.windowClose();
+      }
+    });
+    document.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      if (event.target.closest('.context-menu, .topbar-account-menu')) return;
+      closeContextMenu();
+      closeTopbarAccountMenu();
+    }, true);
+    document.addEventListener('contextmenu', openContextMenu);
+    document.addEventListener('click', () => {
+      closeContextMenu();
+      closeTopbarAccountMenu();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
+        closeContextMenu();
+        closeTopbarAccountMenu();
+      }
+    });
+    document.getElementById('contextPaste').addEventListener('click', pasteToActiveSession);
+    document.getElementById('contextCopy').addEventListener('click', copyFromActiveSession);
+    document.getElementById('contextClear').addEventListener('click', clearActiveTerminal);
+    fields.terminalArea.addEventListener('mousemove', updateTerminalScrollbarHover);
+    fields.terminalArea.addEventListener('mouseleave', () => {
+      fields.terminalArea.classList.remove('scrollbar-hover');
+    });
+    window.addEventListener('resize', fitActiveSession);
+
+    function loadAccounts() {
+      try {
+        return sortAccounts(JSON.parse(localStorage.getItem(storeKey) || '[]'));
+      } catch {
+        return [];
+      }
+    }
+
+    async function loadAccountsFromServer() {
+      const localAccounts = loadAccounts();
+      try {
+        const response = await fetch(withToken('/accounts'));
+        if (!response.ok) {
+          throw new Error(await response.text());
+        }
+        accounts = sortAccounts(await response.json());
+        if (accounts.length === 0 && localAccounts.length > 0) {
+          accounts = localAccounts;
+          await persistAccounts();
+        }
+      } catch {
+        accounts = localAccounts;
+      }
+      renderAccounts();
+    }
+
+    async function persistAccounts() {
+      accounts = sortAccounts(accounts);
+      localStorage.setItem(storeKey, JSON.stringify(accounts));
+      try {
+        await fetch(withToken('/accounts'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(accounts)
+        });
+      } catch {
+      }
+    }
+
+    function accountLabel(account) {
+      return account.name || `${account.username}@${account.host}:${account.port || '22'}`;
+    }
+
+    function escapeHTML(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      }[char]));
+    }
+
+    function sortAccounts(items) {
+      if (!Array.isArray(items)) {
+        return [];
+      }
+      return [...items].sort((left, right) => {
+        const leftName = accountLabel(left).trim();
+        const rightName = accountLabel(right).trim();
+        const byName = leftName.localeCompare(rightName, 'zh-Hans-CN', {
+          numeric: true,
+          sensitivity: 'base'
+        });
+        if (byName !== 0) {
+          return byName;
+        }
+        return (left.host || '').localeCompare(right.host || '', undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        });
+      });
+    }
+
+    function withToken(path) {
+      if (!pageToken) {
+        return path;
+      }
+      const joiner = path.includes('?') ? '&' : '?';
+      return `${path}${joiner}token=${encodeURIComponent(pageToken)}`;
+    }
+
+    function readFontSize() {
+      const stored = Number(localStorage.getItem(fontSizeKey));
+      if (stored === 10) {
+        localStorage.setItem(fontSizeKey, '15');
+        return 15;
+      }
+      if (Number.isFinite(stored)) {
+        return Math.min(28, Math.max(10, stored));
+      }
+      return 15;
+    }
+
+    function changeFontSize(delta) {
+      const next = Math.min(28, Math.max(10, readFontSize() + delta));
+      localStorage.setItem(fontSizeKey, String(next));
+      sessions.forEach(session => {
+        session.term.options.fontSize = next;
+        session.fit.fit();
+      });
+      updateFontSizeLabel();
+      fitActiveSession();
+    }
+
+    function updateFontSizeLabel() {
+      fields.fontSizeLabel.textContent = `${readFontSize()}px`;
+    }
+
+    function updateTerminalScrollbarHover(event) {
+      const rect = fields.terminalArea.getBoundingClientRect();
+      const nearRightEdge = rect.right - event.clientX <= 18;
+      fields.terminalArea.classList.toggle('scrollbar-hover', nearRightEdge);
+    }
+
+    function renderAccounts() {
+      fields.accountSelect.innerHTML = `<option value="">${escapeHTML(t('selectSavedAccount'))}</option>`;
+      accounts.forEach((account, index) => {
+        const option = document.createElement('option');
+        option.value = String(index);
+        option.textContent = accountLabel(account);
+        fields.accountSelect.appendChild(option);
+      });
+    }
+
+    function fillSelectedAccount() {
+      const account = accounts[Number(fields.accountSelect.value)];
+      if (!account) {
+        return;
+      }
+      fields.name.value = account.name || '';
+      fields.host.value = account.host || '';
+      fields.port.value = account.port || '22';
+      fields.username.value = account.username || '';
+      fields.password.value = account.password || '';
+    }
+
+    function readForm() {
+      return {
+        name: fields.name.value.trim(),
+        host: fields.host.value.trim(),
+        port: fields.port.value.trim() || '22',
+        username: fields.username.value.trim(),
+        password: fields.password.value
+      };
+    }
+
+    function saveAccount() {
+      const account = readForm();
+      if (!account.host || !account.username) {
+        setStatus(t('hostUserRequired'), false);
+        return;
+      }
+      account.name = account.name || `${account.username}@${account.host}:${account.port}`;
+      const existing = accounts.findIndex(item => (item.name || '') === account.name);
+      if (existing >= 0) {
+        if (!window.confirm(t('replaceExistingAccount'))) {
+          setStatus(t('saveCanceled'), false);
+          return;
+        }
+        accounts[existing] = account;
+      } else {
+        accounts.push(account);
+      }
+      void persistAccounts();
+      renderAccounts();
+      fields.accountSelect.value = String(accounts.findIndex(item => (item.name || '') === account.name));
+      setStatus(t('accountSaved'), false);
+    }
+
+    function deleteAccount() {
+      const selected = Number(fields.accountSelect.value);
+      if (!Number.isInteger(selected) || !accounts[selected]) {
+        setStatus(t('selectAccount'), false);
+        return;
+      }
+      accounts.splice(selected, 1);
+      void persistAccounts();
+      renderAccounts();
+      setStatus(t('accountDeleted'), false);
+    }
+
+    function toggleSidebar() {
+      document.body.classList.toggle('sidebar-collapsed');
+      localStorage.setItem(sidebarKey, document.body.classList.contains('sidebar-collapsed') ? '1' : '0');
+      setTimeout(fitActiveSession, 40);
+    }
+
+    function createSSHSession() {
+      const account = readForm();
+      if (!account.host || !account.username) {
+        setStatus(t('fillHostUser'), false);
+        return;
+      }
+      createSSHSessionFromAccount(account);
+    }
+
+    function createSSHSessionFromAccount(account) {
+      createSession({
+        title: account.name || `${account.username}@${account.host}:${account.port}`,
+        path: '/ws?mode=ssh',
+        initMessage: {
+          host: account.host,
+          port: account.port,
+          username: account.username,
+          password: account.password
+        }
+      });
+    }
+
+    function createSession(options) {
+      const id = `session-${++sessionSeq}`;
+      const title = uniqueSessionTitle(options.title);
+      const pane = document.createElement('div');
+      pane.className = 'terminal-pane';
+      pane.dataset.sessionId = id;
+      fields.terminalArea.appendChild(pane);
+
+      const term = new Terminal({
+        cursorBlink: true,
+        scrollback: 5000,
+        fontFamily: '"DejaVu Sans Mono", "Courier New", "Lucida Console", "Cascadia Mono", Consolas, "Microsoft YaHei", monospace',
+        fontSize: readFontSize(),
+        theme: {
+          background: '#0f1318',
+          foreground: '#e8edf2',
+          cursor: '#f2c94c',
+          selectionBackground: '#315f8d'
+        }
+      });
+      const fit = new FitAddon.FitAddon();
+      const session = {
+        id,
+        title,
+        baseTitle: options.title,
+        pane,
+        term,
+        fit,
+        ws: null,
+        statusKey: 'connecting',
+        ready: false,
+        path: options.path,
+        initMessage: options.initMessage
+      };
+      sessions.push(session);
+
+      term.loadAddon(fit);
+      term.open(pane);
+      term.onData(data => {
+        if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+          session.ws.send(data);
+        }
+      });
+
+      activateSession(id);
+      connectSession(session, options.path, options.initMessage);
+      renderTabs();
+    }
+
+    function uniqueSessionTitle(title) {
+      const base = title || 'SSH';
+      const sameCount = sessions.filter(session => (session.baseTitle || session.title) === base).length;
+      return sameCount === 0 ? base : `${base} #${sameCount + 1}`;
+    }
+
+    function connectSession(session, path, initMessage) {
+      const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = location.protocol === 'file:' ? '127.0.0.1:2930' : location.host;
+      const joiner = path.includes('?') ? '&' : '?';
+      const tokenPart = pageToken ? `${joiner}token=${encodeURIComponent(pageToken)}` : '';
+      session.ws = new WebSocket(`${wsProtocol}//${host}${path}${tokenPart}`);
+      session.ws.binaryType = 'arraybuffer';
+
+      session.ws.addEventListener('open', () => {
+        if (initMessage) {
+          initMessage.rows = session.term.rows || 30;
+          initMessage.cols = session.term.cols || 120;
+          session.ws.send(JSON.stringify(initMessage));
+        }
+        updateSessionState(session.id, 'connected', true);
+        collapseSidebar();
+        session.term.focus();
+      });
+      session.ws.addEventListener('message', event => {
+        if (event.data instanceof ArrayBuffer) {
+          session.term.write(new Uint8Array(event.data));
+        } else {
+          if (!session.ready && isSSHLoginFailure(event.data)) {
+            updateSessionState(session.id, 'connectionError', false);
+            window.alert(`${t('sshLoginFailed')}\n\n${cleanTerminalText(event.data)}`);
+          }
+          session.term.write(event.data);
+        }
+      });
+      session.ws.addEventListener('close', () => {
+        if (session.statusKey !== 'connectionError') {
+          updateSessionState(session.id, 'disconnected', false);
+        }
+        session.term.writeln(`\r\n${t('disconnectMessage')}`);
+      });
+      session.ws.addEventListener('error', () => {
+        updateSessionState(session.id, 'connectionError', false);
+        if (!session.ready) {
+          window.alert(t('sshLoginFailed'));
+        }
+      });
+    }
+
+    function isSSHLoginFailure(text) {
+      return typeof text === 'string' && (
+        text.includes('ssh connect failed') ||
+        text.includes('ssh session failed') ||
+        text.includes('invalid ssh port') ||
+        text.includes('missing ssh host or username') ||
+        text.includes('failed to request pty') ||
+        text.includes('failed to start ssh shell')
+      );
+    }
+
+    function cleanTerminalText(text) {
+      return String(text).replace(/\r/g, '').replace(/\n+/g, '\n').trim();
+    }
+
+    function reconnectSession(id) {
+      const session = sessions.find(item => item.id === id);
+      if (!session) {
+        return;
+      }
+      if (session.ws) {
+        session.ws.close();
+      }
+      session.term.clear();
+      updateSessionState(session.id, 'connecting', false);
+      connectSession(session, session.path, { ...session.initMessage });
+      activateSession(session.id);
+    }
+
+    function activateSession(id) {
+      activeSessionId = id;
+      sessions.forEach(session => {
+        session.pane.classList.toggle('active', session.id === id);
+      });
+      renderTabs();
+      updateHeader();
+      requestAnimationFrame(fitActiveSession);
+    }
+
+    function closeSession(id) {
+      const index = sessions.findIndex(session => session.id === id);
+      if (index === -1) {
+        return;
+      }
+      const [session] = sessions.splice(index, 1);
+      if (session.ws) {
+        session.ws.close();
+      }
+      session.term.dispose();
+      session.pane.remove();
+      if (activeSessionId === id) {
+        const next = sessions[index] || sessions[index - 1];
+        if (next) {
+          activateSession(next.id);
+        } else {
+          activeSessionId = '';
+          updateHeader();
+        }
+      }
+      renderTabs();
+      updateHeader();
+    }
+
+    function renderTabs() {
+      fields.tabs.innerHTML = '';
+      sessions.forEach(session => {
+        const tab = document.createElement('div');
+        const stateClass = session.ready ? ' connected' : session.statusKey === 'disconnected' ? ' disconnected' : session.statusKey === 'connectionError' ? ' error' : '';
+        tab.className = `tab${session.id === activeSessionId ? ' active' : ''}${stateClass}`;
+        tab.draggable = true;
+        tab.dataset.sessionId = session.id;
+        bindSessionTabDrag(tab, session.id);
+        tab.role = 'button';
+        tab.tabIndex = 0;
+        tab.title = session.title;
+        tab.addEventListener('mousedown', event => {
+          event.stopPropagation();
+        });
+        tab.addEventListener('pointerdown', event => {
+          event.stopPropagation();
+        });
+        tab.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          activateSession(session.id);
+        });
+        tab.addEventListener('keydown', event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            activateSession(session.id);
+          }
+        });
+
+        const title = document.createElement('span');
+        title.className = 'tab-title';
+        title.textContent = session.title;
+        tab.appendChild(title);
+
+        const dot = document.createElement('span');
+        dot.className = 'tab-status-dot';
+        tab.appendChild(dot);
+
+        const status = document.createElement('span');
+        status.className = 'tab-status-text';
+        status.textContent = t(session.statusKey);
+        tab.appendChild(status);
+
+        if (session.statusKey === 'disconnected' || session.statusKey === 'connectionError') {
+          const refresh = document.createElement('button');
+          refresh.className = 'tab-refresh';
+          refresh.type = 'button';
+          refresh.title = t('reconnect');
+          refresh.textContent = '?';
+          refresh.addEventListener('click', event => {
+            event.stopPropagation();
+            reconnectSession(session.id);
+          });
+          tab.appendChild(refresh);
+        }
+
+        const close = document.createElement('button');
+        close.className = 'tab-close';
+        close.type = 'button';
+        close.title = t('closeTerminal');
+        close.textContent = 'x';
+        close.addEventListener('click', event => {
+          event.stopPropagation();
+          closeSession(session.id);
+        });
+        tab.appendChild(close);
+        fields.tabs.appendChild(tab);
+      });
+    }
+
+
+    function bindSessionTabDrag(tab, sessionId) {
+      tab.addEventListener('dragstart', event => {
+        if (event.target.closest('button')) {
+          event.preventDefault();
+          return;
+        }
+        draggedSessionId = sessionId;
+        tab.classList.add('dragging');
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/x-mshell-session', sessionId);
+        event.dataTransfer.setData('text/plain', sessionId);
+      });
+      tab.addEventListener('dragover', event => {
+        const draggedId = draggedSessionId || event.dataTransfer?.getData('text/x-mshell-session') || event.dataTransfer?.getData('text/plain');
+        if (!draggedId || draggedId === sessionId) return;
+        event.preventDefault();
+        markSessionDropPosition(tab, event);
+      });
+      tab.addEventListener('dragleave', () => {
+        tab.classList.remove('drop-before', 'drop-after');
+      });
+      tab.addEventListener('drop', event => {
+        const draggedId = draggedSessionId || event.dataTransfer?.getData('text/x-mshell-session') || event.dataTransfer?.getData('text/plain');
+        if (!draggedId || draggedId === sessionId) return;
+        event.preventDefault();
+        const after = isDropAfter(tab, event);
+        clearSessionDropMarkers();
+        reorderSession(draggedId, sessionId, after);
+      });
+      tab.addEventListener('dragend', () => {
+        draggedSessionId = '';
+        clearSessionDropMarkers();
+      });
+    }
+
+    function markSessionDropPosition(tab, event) {
+      clearSessionDropMarkers();
+      tab.classList.add(isDropAfter(tab, event) ? 'drop-after' : 'drop-before');
+    }
+
+    function clearSessionDropMarkers() {
+      fields.tabs.querySelectorAll('.tab.dragging, .tab.drop-before, .tab.drop-after').forEach(tab => {
+        tab.classList.remove('dragging', 'drop-before', 'drop-after');
+      });
+    }
+
+    function isDropAfter(tab, event) {
+      const rect = tab.getBoundingClientRect();
+      return event.clientX > rect.left + rect.width / 2;
+    }
+
+    function reorderSession(draggedId, targetId, after) {
+      if (!draggedId || draggedId === targetId) return;
+      const from = sessions.findIndex(session => session.id === draggedId);
+      if (from === -1) return;
+      const [moved] = sessions.splice(from, 1);
+      let to = sessions.findIndex(session => session.id === targetId);
+      if (to === -1) to = sessions.length;
+      if (after) to += 1;
+      sessions.splice(Math.max(0, Math.min(to, sessions.length)), 0, moved);
+      renderTabs();
+    }
+
+    function moveSessionToIndex(id, index) {
+      const from = sessions.findIndex(session => session.id === id);
+      if (from === -1) return;
+      const [moved] = sessions.splice(from, 1);
+      sessions.splice(Math.max(0, Math.min(index, sessions.length)), 0, moved);
+      renderTabs();
+    }
+
+    function fitActiveSession() {
+      const session = activeSession();
+      if (!session) {
+        return;
+      }
+      session.fit.fit();
+      session.term.focus();
+    }
+
+    function openTopbarAccountMenu(event) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeContextMenu();
+      const menu = fields.topbarAccountMenu;
+      const items = accounts.length
+        ? accounts.map((account, index) => `<button type="button" data-account-index="${index}">${escapeHTML(accountLabel(account))}</button>`).join('')
+        : `<button type="button" disabled>${escapeHTML(t('noSavedAccounts'))}</button>`;
+      menu.innerHTML = items;
+      menu.classList.add('open');
+      const width = menu.offsetWidth || 220;
+      const height = menu.offsetHeight || 80;
+      const x = Math.min(event.clientX, window.innerWidth - width - 8);
+      const y = Math.min(event.clientY, window.innerHeight - height - 8);
+      menu.style.left = `${Math.max(8, x)}px`;
+      menu.style.top = `${Math.max(8, y)}px`;
+      menu.querySelectorAll('button[data-account-index]').forEach(button => {
+        button.addEventListener('click', clickEvent => {
+          clickEvent.stopPropagation();
+          const account = accounts[Number(button.dataset.accountIndex)];
+          closeTopbarAccountMenu();
+          if (account) {
+            createSSHSessionFromAccount(account);
+          }
+        });
+      });
+    }
+
+    function closeTopbarAccountMenu() {
+      fields.topbarAccountMenu.classList.remove('open');
+    }
+
+    function openContextMenu(event) {
+      event.preventDefault();
+      const menu = fields.contextMenu;
+      menu.classList.add('open');
+      const width = menu.offsetWidth || 150;
+      const height = menu.offsetHeight || 70;
+      const x = Math.min(event.clientX, window.innerWidth - width - 8);
+      const y = Math.min(event.clientY, window.innerHeight - height - 8);
+      menu.style.left = `${Math.max(8, x)}px`;
+      menu.style.top = `${Math.max(8, y)}px`;
+    }
+
+    function closeContextMenu() {
+      fields.contextMenu.classList.remove('open');
+    }
+
+    function clearActiveTerminal() {
+      closeContextMenu();
+      const session = activeSession();
+      if (!session || !session.term) {
+        return;
+      }
+      session.term.clear();
+      session.term.focus();
+    }
+
+    async function pasteToActiveSession() {
+      closeContextMenu();
+      const session = activeSession();
+      if (!session || !session.ws || session.ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      try {
+        const text = window.readClipboardText
+          ? await window.readClipboardText()
+          : await navigator.clipboard.readText();
+        if (text) {
+          session.ws.send(text);
+          session.term.focus();
+        }
+      } catch {
+        session.term.focus();
+      }
+    }
+
+    async function copyFromActiveSession() {
+      closeContextMenu();
+      const session = activeSession();
+      const selection = session ? session.term.getSelection() : window.getSelection().toString();
+      if (!selection) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(selection);
+      } catch {
+      }
+      if (session) {
+        session.term.focus();
+      }
+    }
+
+    function activeSession() {
+      return sessions.find(session => session.id === activeSessionId);
+    }
+
+    function updateSessionState(id, statusKey, ready) {
+      const session = sessions.find(item => item.id === id);
+      if (!session) {
+        return;
+      }
+      session.statusKey = statusKey;
+      session.ready = ready;
+      renderTabs();
+      if (id === activeSessionId) {
+        updateHeader();
+      }
+    }
+
+    function collapseSidebar() {
+      if (!document.body.classList.contains('sidebar-collapsed')) {
+        document.body.classList.add('sidebar-collapsed');
+        localStorage.setItem(sidebarKey, '1');
+        setTimeout(fitActiveSession, 40);
+      }
+    }
+
+    function updateHeader() {
+      const session = activeSession();
+      if (!session) {
+        setStatus(t('notConnected'), false);
+        return;
+      }
+      setStatus(t(session.statusKey), session.ready);
+    }
+
+    function setStatus(text, ready) {
+      document.title = text ? `mshell - ${text}` : 'mshell';
+    }
+  </script>
+</body>
+</html>
